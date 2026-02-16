@@ -29,12 +29,12 @@ Provide a repeatable workflow for controlling the LLM Shell API: start a process
 
 ## Project command preface (required)
 
-- ALWAYS change to the project directory before running the server or executing any commands for this project: `cd /Users/vvzvlad/Data/Projects/llm_shell`.
+- ALWAYS change to the project directory before running the server or executing any commands for this project: `cd /Users/vvzvlad/projects/server_hd`.
 - ALWAYS activate the virtual environment before running the server or executing any commands for this project: `source venv/bin/activate`.
 - Example command format (must include both steps):
 
 ```bash
-cd /Users/vvzvlad/Data/Projects/llm_shell && source venv/bin/activate && python -m uvicorn src.main:app
+cd /Users/vvzvlad/projects/server_hd && source .venv/bin/activate && python -m uvicorn src.main:app
 ```
 
 Example `curl` commands (use via `execute_command`):
