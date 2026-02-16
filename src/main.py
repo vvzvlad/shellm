@@ -96,6 +96,12 @@ def _status_text(payload: dict) -> str:
     lines.append(f"env_count: {payload.get('env_count', '-')}")
     lines.append(f"io_read_bytes: {payload.get('io_read_bytes', '-')}")
     lines.append(f"io_write_bytes: {payload.get('io_write_bytes', '-')}")
+    
+    # Add log_tail if present (for processes that exit immediately)
+    log_tail = payload.get('log_tail')
+    if log_tail:
+        lines.append(f"\nLogs:\n{log_tail}")
+    
     return "\n".join(lines)
 
 
@@ -141,6 +147,8 @@ async def start_process(request: StartRequest, format: str = Query("text")):
         await asyncio.sleep(2)
         status = process_manager.get_status()
         if status.get("status") == "exited":
+            log_manager.stop_logging()  # Ensure log writer completes
+            await asyncio.sleep(0.5)  # Give thread time to flush
             try:
                 log_tail = log_manager.read_logs(status["log_file"], lines=100).get("content", "")
             except (BadRequestError, NotFoundError):
