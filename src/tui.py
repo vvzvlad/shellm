@@ -211,7 +211,6 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
             io_value = str(status.get('io_rate', '-') if show_runtime else '-')
             status_lines.append(row_with_spark("CPU", cpu_value, status.get("cpu_history", [])))
             status_lines.append(row_with_spark("MEM", mem_value, status.get("mem_history", [])))
-            status_lines.append(row_with_spark("IO", io_value, status.get("io_history", [])))
             status_lines.append("")
             status_lines.append("COMMAND:")
             command = status.get("command", "-") or "-"
