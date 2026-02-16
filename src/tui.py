@@ -128,19 +128,20 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
         status_lines.append(f"STATUS: {current_status}")
         status_lines.append(f"PID: {status.get('pid', '-') if show_runtime else '-'}")
         status_lines.append(f"UPTIME: {status.get('uptime', '-') if show_runtime else '-'}")
+        status_lines.append(f"CPU: {status.get('cpu', '-') if show_runtime else '-'}")
+        status_lines.append(f"MEM: {status.get('mem', '-') if show_runtime else '-'}")
+        status_lines.append(f"USER: {status.get('user', '-') if show_runtime else '-'}")
+        ports = status.get("ports") if show_runtime else None
+        status_lines.append(f"PORTS: {ports if ports else '-'}")
         status_lines.append("")
         status_lines.append("COMMAND:")
         command = status.get("command", "-") or "-"
         for line in _wrap_text(command, side_width - 2):
             status_lines.append(line)
-        status_lines.append("")
-        status_lines.append("HOTKEYS:")
-        status_lines.append("k  -> SIGTERM")
-        status_lines.append("K/9-> SIGKILL")
 
         _draw_pane(stdscr, 0, 0, height, side_width, " STATUS ", status_lines)
         _draw_pane(stdscr, 0, right_x, split, right_width, " API SERVER LOGS (q to quit) ", api_lines)
-        _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS ", app_lines)
+        _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS (k to SIGTERM, K/9 to SIGKILL))", app_lines)
 
         stdscr.refresh()
         ch = stdscr.getch()
@@ -177,7 +178,16 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
     app_lines: Deque[str] = deque(maxlen=500)
     stop_event = threading.Event()
     status_lock = threading.Lock()
-    status_info = {"status": "-", "pid": "-", "command": "-", "uptime": "-"}
+    status_info = {
+        "status": "-",
+        "pid": "-",
+        "command": "-",
+        "uptime": "-",
+        "cpu": "-",
+        "mem": "-",
+        "user": "-",
+        "ports": "-",
+    }
 
     api_process: Optional[subprocess.Popen] = None
     if not attach:
@@ -216,6 +226,13 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
                     status_info["pid"] = status.get("process_pid") or "-"
                     status_info["command"] = status.get("command") or "-"
                     status_info["uptime"] = _format_uptime(status.get("created_at"))
+                    cpu = status.get("cpu_percent")
+                    mem = status.get("memory_mb")
+                    status_info["cpu"] = f"{cpu:.1f}%" if isinstance(cpu, (int, float)) else "-"
+                    status_info["mem"] = f"{mem:.1f} MB" if isinstance(mem, (int, float)) else "-"
+                    status_info["user"] = status.get("user") or "-"
+                    ports = status.get("ports")
+                    status_info["ports"] = ",".join(str(p) for p in ports) if ports else "-"
 
             if status and status.get("log_file"):
                 logs = _get_json(f"{base_url}/logs?lines={lines}", headers=headers)

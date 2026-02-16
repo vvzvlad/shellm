@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Optional
 
+import psutil
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -80,7 +81,38 @@ async def start_process(request: StartRequest) -> dict:
 @app.get("/status", response_model=ProcessStatus)
 async def get_status() -> dict:
     try:
-        return process_manager.get_status()
+        status = process_manager.get_status()
+        if status.get("process_pid") and status.get("status") == "running":
+            try:
+                proc = psutil.Process(status["process_pid"])
+                cpu = proc.cpu_percent(interval=0.0)
+                mem = proc.memory_info().rss
+                user = proc.username()
+                ports = sorted(
+                    {
+                        conn.laddr.port
+                        for conn in proc.connections(kind="inet")
+                        if conn.status == psutil.CONN_LISTEN and conn.laddr
+                    }
+                )
+                status.update(
+                    {
+                        "cpu_percent": cpu,
+                        "memory_mb": mem / (1024 * 1024),
+                        "user": user,
+                        "ports": ports,
+                    }
+                )
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                status.update(
+                    {
+                        "cpu_percent": None,
+                        "memory_mb": None,
+                        "user": None,
+                        "ports": None,
+                    }
+                )
+        return status
     except NotFoundError:
         return {
             "command": "",
@@ -90,6 +122,10 @@ async def get_status() -> dict:
             "log_file": "",
             "stopped_at": None,
             "exit_code": None,
+            "cpu_percent": None,
+            "memory_mb": None,
+            "user": None,
+            "ports": None,
         }
 
 

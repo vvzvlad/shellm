@@ -18,6 +18,10 @@ class ProcessStatus(BaseModel):
     log_file: str
     stopped_at: Optional[datetime] = None
     exit_code: Optional[int] = None
+    cpu_percent: Optional[float] = None
+    memory_mb: Optional[float] = None
+    user: Optional[str] = None
+    ports: Optional[list[int]] = None
 
 
 class KillResponse(BaseModel):
