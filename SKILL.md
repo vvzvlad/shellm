@@ -22,6 +22,31 @@ Provide a repeatable workflow for controlling the LLM Shell API: start a process
 - Add `?format=json` to get JSON for machine parsing.
 - `/logs` always returns **plain text**.
 
+## Testing methodology (required)
+
+- Use the `execute_command` tool with `curl` for all testing or interaction with llm_shell API endpoints.
+- Do **not** use a browser to test API endpoints.
+
+Example `curl` commands (use via `execute_command`):
+
+```bash
+curl -s http://localhost:8776/health
+```
+
+```bash
+curl -s -X POST http://localhost:8776/start \
+  -H "Content-Type: application/json" \
+  -d '{"command":"python -m http.server 8080"}'
+```
+
+```bash
+curl -s http://localhost:8776/status
+```
+
+```bash
+curl -s -X POST 'http://localhost:8776/kill?type=SIGTERM'
+```
+
 ## Workflow
 
 ### 1) Check API health
