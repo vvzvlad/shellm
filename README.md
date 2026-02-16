@@ -63,7 +63,8 @@ sequenceDiagram
 ## Case: HTTP-server
 
 ```bash
-curl -s -X POST http://localhost:8776/start -d 'cd ~/Projects/backend && python main.py'
+[$]> curl -s -X POST http://localhost:8776/start -d 'cd ~/Projects/backend && python main.py'
+
 status: running
 pid: 43675
 uptime: 2s
@@ -76,7 +77,8 @@ mem_mb: 1.796875
 ```
 
 ```bash
-curl -s 'http://localhost:8776/logs?lines=40' 
+[$]> curl -s 'http://localhost:8776/logs?lines=40' 
+
 2026-02-16 10:31:14.769 | INFO     | uvicorn.error:_serve:84 - Started server process [43678]
 2026-02-16 10:31:14.769 | INFO     | uvicorn.error:startup:48 - Waiting for application startup.
 2026-02-16 10:31:14.769 | INFO     | main:lifespan:31 - === LIFESPAN STARTUP BEGIN ===
@@ -99,7 +101,7 @@ curl -s 'http://localhost:8776/logs?lines=40'
 In the case of MK, he can say “reboot” and “output logs”: `platformio run --target upload --target monitor`,
 
 ```bash
-curl -s -X POST http://localhost:8776/start -d 'pio run -t upload -t monitor'
+[$]> curl -s -X POST http://localhost:8776/start -d 'pio run -t upload -t monitor'
 
 status: running
 pid: 65889
@@ -115,7 +117,7 @@ childrens: 22
 and then
 
 ```bash
-sleep 20 && curl -s 'http://localhost:8776/logs?lines=200'
+[$]> sleep 20 && curl -s 'http://localhost:8776/logs?lines=200'
 
 PLATFORM: Espressif 32 (6.12.0) > Espressif ESP32-C3-DevKitM-1
 HARDWARE: ESP32C3 160MHz, 320KB RAM, 4MB Flash
