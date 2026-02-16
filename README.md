@@ -6,13 +6,13 @@ HTTP API for managing a single process in a non-blocking mode. It is suitable fo
 
 ```bash
 pip install -r requirements.txt
-python -m src.main --port 8000
+python -m src.main --port 8776
 ```
 
 Check:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8776/health
 ```
 
 ## API
@@ -20,42 +20,45 @@ curl http://localhost:8000/health
 ### POST /start
 
 ```bash
-curl -X POST http://localhost:8000/start \
+curl -X POST http://localhost:8776/start \
   -H "Content-Type: application/json" \
   -d '{"command": "python -m http.server 8080"}'
 ```
+
+Note (EN): after starting a command, the API waits ~2 seconds before responding to collect PID/status and catch early errors (for example, invalid folder paths).
+Примечание (RU): после запуска команды API ждёт ~2 секунды перед ответом, чтобы собрать PID/статус и поймать ранние ошибки (например, неверные пути к папке).
 
 By default, responses are plain text. For JSON, add `?format=json`.
 
 ### GET /status
 
 ```bash
-curl http://localhost:8000/status
+curl http://localhost:8776/status
 ```
 
-For JSON: `curl 'http://localhost:8000/status?format=json'`.
+For JSON: `curl 'http://localhost:8776/status?format=json'`.
 
 ### POST /kill
 
 ```bash
-curl -X POST 'http://localhost:8000/kill?type=SIGTERM'
+curl -X POST 'http://localhost:8776/kill?type=SIGTERM'
 ```
 
-For JSON: `curl -X POST 'http://localhost:8000/kill?type=SIGTERM&format=json'`.
+For JSON: `curl -X POST 'http://localhost:8776/kill?type=SIGTERM&format=json'`.
 
 ### POST /restart
 
 ```bash
-curl -X POST 'http://localhost:8000/restart?timeout=5'
+curl -X POST 'http://localhost:8776/restart?timeout=5'
 ```
 
-For JSON: `curl -X POST 'http://localhost:8000/restart?timeout=5&format=json'`.
+For JSON: `curl -X POST 'http://localhost:8776/restart?timeout=5&format=json'`.
 
 ### GET /logs
 
 ```bash
-curl 'http://localhost:8000/logs?lines=100'
-curl 'http://localhost:8000/logs?seconds=30'
+curl 'http://localhost:8776/logs?lines=100'
+curl 'http://localhost:8776/logs?seconds=30'
 ```
 
 ## Configuration
@@ -63,14 +66,14 @@ curl 'http://localhost:8000/logs?seconds=30'
 You can configure via ENV:
 
 ```bash
-export LLM_SHELL_PORT=8000
+export LLM_SHELL_PORT=8776
 export LLM_SHELL_HOST=0.0.0.0
 ```
 
 Or via CLI:
 
 ```bash
-python -m src.main --host 127.0.0.1 --port 8000
+python -m src.main --host 127.0.0.1 --port 8776
 ```
 
 ## Tests

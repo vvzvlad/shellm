@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import sys
 import time
@@ -128,9 +129,80 @@ async def start_process(request: StartRequest, format: str = Query("text")):
         log_file = log_manager.create_log_file()
         status = process_manager.start(request.command, log_file)
         log_manager.start_logging(process_manager.get_process(), log_file)
+        await asyncio.sleep(2)
+        status = process_manager.get_status()
+        if status.get("process_pid") and status.get("status") == "running":
+            try:
+                proc = psutil.Process(status["process_pid"])
+                cpu = proc.cpu_percent(interval=0.0)
+                mem = proc.memory_info().rss
+                user = proc.username()
+                ports = sorted(
+                    {
+                        conn.laddr.port
+                        for conn in proc.connections(kind="inet")
+                        if conn.status == psutil.CONN_LISTEN and conn.laddr
+                    }
+                )
+                try:
+                    io_counters = proc.io_counters() if proc.is_running() else None
+                except (AttributeError, psutil.Error):
+                    io_counters = None
+                try:
+                    open_files = proc.open_files() if proc.is_running() else []
+                except (AttributeError, psutil.Error):
+                    open_files = []
+                try:
+                    conns = proc.connections(kind="inet") if proc.is_running() else []
+                except (AttributeError, psutil.Error):
+                    conns = []
+                try:
+                    children = proc.children(recursive=True) if proc.is_running() else []
+                except (AttributeError, psutil.Error):
+                    children = []
+                try:
+                    env = proc.environ() if proc.is_running() else {}
+                except (AttributeError, psutil.Error):
+                    env = {}
+                uptime_seconds = int(max(0.0, time.time() - proc.create_time()))
+                status.update(
+                    {
+                        "cpu_percent": cpu,
+                        "memory_mb": mem / (1024 * 1024),
+                        "user": user,
+                        "ports": ports,
+                        "threads": proc.num_threads(),
+                        "io_read_bytes": io_counters.read_bytes if io_counters else None,
+                        "io_write_bytes": io_counters.write_bytes if io_counters else None,
+                        "open_files": len(open_files),
+                        "connections": len(conns),
+                        "children": len(children),
+                        "env_count": len(env),
+                        "env_keys": sorted(list(env.keys()))[:10],
+                        "uptime_seconds": uptime_seconds,
+                    }
+                )
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                status.update(
+                    {
+                        "cpu_percent": None,
+                        "memory_mb": None,
+                        "user": None,
+                        "ports": None,
+                        "threads": None,
+                        "io_read_bytes": None,
+                        "io_write_bytes": None,
+                        "open_files": None,
+                        "connections": None,
+                        "children": None,
+                        "env_count": None,
+                        "env_keys": None,
+                        "uptime_seconds": None,
+                    }
+                )
         if format == "json":
             return status
-        return PlainTextResponse(_start_text(status))
+        return PlainTextResponse(_status_text(status))
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except InternalError as exc:

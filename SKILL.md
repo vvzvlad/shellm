@@ -29,7 +29,7 @@ Provide a repeatable workflow for controlling the LLM Shell API: start a process
 Run:
 
 ```bash
-curl -s http://localhost:8000/health
+curl -s http://localhost:8776/health
 ```
 
 Expect `{"status":"healthy"}`.
@@ -39,15 +39,18 @@ Expect `{"status":"healthy"}`.
 Plain text:
 
 ```bash
-curl -s -X POST http://localhost:8000/start \
+curl -s -X POST http://localhost:8776/start \
   -H "Content-Type: application/json" \
   -d '{"command":"python -m http.server 8080"}'
 ```
 
+Note (EN): after POST /start (run_command), the API waits ~2 seconds before responding to collect PID/status and catch early errors (e.g., invalid folder paths).
+Look closely at the API response to see if the command actually ran.
+
 JSON:
 
 ```bash
-curl -s -X POST 'http://localhost:8000/start?format=json' \
+curl -s -X POST 'http://localhost:8776/start?format=json' \
   -H "Content-Type: application/json" \
   -d '{"command":"python -m http.server 8080"}'
 ```
@@ -59,13 +62,13 @@ If response is 409, process is already running. Decide to kill it first or resta
 Plain text:
 
 ```bash
-curl -s http://localhost:8000/status
+curl -s http://localhost:8776/status
 ```
 
 JSON:
 
 ```bash
-curl -s 'http://localhost:8000/status?format=json'
+curl -s 'http://localhost:8776/status?format=json'
 ```
 
 If `status` is `running`, continue. If `exited`, inspect logs.
@@ -75,13 +78,13 @@ If `status` is `running`, continue. If `exited`, inspect logs.
 - Last N lines:
 
 ```bash
-curl -s 'http://localhost:8000/logs?lines=100'
+curl -s 'http://localhost:8776/logs?lines=100'
 ```
 
 - Last N seconds:
 
 ```bash
-curl -s 'http://localhost:8000/logs?seconds=30'
+curl -s 'http://localhost:8776/logs?seconds=30'
 ```
 
 Do not pass both `lines` and `seconds` in one request.
@@ -91,13 +94,13 @@ Do not pass both `lines` and `seconds` in one request.
 Plain text:
 
 ```bash
-curl -s -X POST 'http://localhost:8000/restart?timeout=5'
+curl -s -X POST 'http://localhost:8776/restart?timeout=5'
 ```
 
 JSON:
 
 ```bash
-curl -s -X POST 'http://localhost:8000/restart?timeout=5&format=json'
+curl -s -X POST 'http://localhost:8776/restart?timeout=5&format=json'
 ```
 
 This sends SIGTERM first, then SIGKILL if the process does not exit within timeout.
@@ -107,13 +110,13 @@ This sends SIGTERM first, then SIGKILL if the process does not exit within timeo
 Plain text:
 
 ```bash
-curl -s -X POST 'http://localhost:8000/kill?type=SIGTERM'
+curl -s -X POST 'http://localhost:8776/kill?type=SIGTERM'
 ```
 
 JSON:
 
 ```bash
-curl -s -X POST 'http://localhost:8000/kill?type=SIGTERM&format=json'
+curl -s -X POST 'http://localhost:8776/kill?type=SIGTERM&format=json'
 ```
 
 ### 7) Example loop command
@@ -121,7 +124,7 @@ curl -s -X POST 'http://localhost:8000/kill?type=SIGTERM&format=json'
 Run a looping command to validate log streaming:
 
 ```bash
-curl -s -X POST http://localhost:8000/start \
+curl -s -X POST http://localhost:8776/start \
   -H "Content-Type: application/json" \
   -d '{"command":"while true; do echo loop-$(date +%H:%M:%S); sleep 1; done"}'
 ```
@@ -129,7 +132,7 @@ curl -s -X POST http://localhost:8000/start \
 Then:
 
 ```bash
-curl -s 'http://localhost:8000/logs?lines=5'
+curl -s 'http://localhost:8776/logs?lines=5'
 ```
 
 ### 8) Typical dev cycle

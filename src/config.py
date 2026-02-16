@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8776
     log_dir: str = "logs"
     default_restart_timeout: int = 10
 

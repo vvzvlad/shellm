@@ -208,9 +208,15 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
         for line in _wrap_text(command, side_width - 2):
             status_lines.append(line)
 
+        wrapped_app_lines = deque()
+        wrap_width = max(1, right_width - 2)
+        for line in app_lines:
+            for wrapped_line in _wrap_text(line, wrap_width):
+                wrapped_app_lines.append(wrapped_line)
+
         _draw_pane(stdscr, 0, 0, height, side_width, " STATUS ", status_lines)
         _draw_pane(stdscr, 0, right_x, split, right_width, " API SERVER LOGS (q to quit) ", api_lines)
-        _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS (k to SIGTERM, K/9 to SIGKILL))", app_lines)
+        _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS (k to SIGTERM, K/9 to SIGKILL))", wrapped_app_lines)
 
         stdscr.refresh()
         ch = stdscr.getch()
