@@ -78,6 +78,29 @@ def _format_duration(seconds: Optional[int]) -> str:
     return f"{sec}s"
 
 
+def _collect_ports(proc: psutil.Process) -> tuple[list[int], int]:
+    ports: list[int] = []
+    child_count = 0
+    try:
+        all_connections = proc.connections(kind="all")
+    except (psutil.AccessDenied, psutil.Error):
+        all_connections = []
+    ports.extend(conn.laddr.port for conn in all_connections if conn.laddr)
+    try:
+        children = proc.children(recursive=True) if proc.is_running() else []
+        child_count = len(children)
+    except (AttributeError, psutil.Error):
+        children = []
+    for child in children:
+        try:
+            child_connections = child.connections(kind="all")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+            continue
+        ports.extend(conn.laddr.port for conn in child_connections if conn.laddr)
+    ports = sorted(set(ports))
+    return ports, child_count
+
+
 def _status_text(payload: dict) -> str:
     lines = []
     lines.append(f"status: {payload.get('status', '-')}")
@@ -94,8 +117,6 @@ def _status_text(payload: dict) -> str:
     lines.append(f"connections: {payload.get('connections', '-')}")
     lines.append(f"children: {payload.get('children', '-')}")
     lines.append(f"env_count: {payload.get('env_count', '-')}")
-    lines.append(f"io_read_bytes: {payload.get('io_read_bytes', '-')}")
-    lines.append(f"io_write_bytes: {payload.get('io_write_bytes', '-')}")
     
     # Add log_tail if present (for processes that exit immediately)
     log_tail = payload.get('log_tail')
@@ -159,60 +180,7 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                 cpu = proc.cpu_percent(interval=0.0)
                 mem = proc.memory_info().rss
                 user = proc.username()
-                
-                # Debug: Log connection collection attempt
-                debug_logger.debug(f"Collecting connections for PID {status['process_pid']}")
-                try:
-                    all_connections = proc.connections(kind="all")
-                    debug_logger.debug(f"Found {len(all_connections)} all connections")
-                    for conn in all_connections:
-                        debug_logger.debug(f"  Connection: {conn.status}, laddr={conn.laddr}, raddr={conn.raddr}")
-                except psutil.AccessDenied as e:
-                    debug_logger.debug(f"AccessDenied getting connections: {e}")
-                    all_connections = []
-                except Exception as e:
-                    debug_logger.debug(f"Error getting connections: {type(e).__name__}: {e}")
-                    all_connections = []
-                
-                # Collect ports from main process
-                ports = sorted(
-                    {
-                        conn.laddr.port
-                        for conn in all_connections
-                        if conn.laddr
-                    }
-                )
-                debug_logger.debug(f"Main process ports: {ports}")
-                
-                # Also collect ports from child processes
-                try:
-                    children = proc.children(recursive=True) if proc.is_running() else []
-                    debug_logger.debug(f"Found {len(children)} child processes")
-                    for child in children:
-                        try:
-                            child_connections = child.connections(kind="all")
-                            debug_logger.debug(f"Child PID {child.pid}: {len(child_connections)} connections")
-                            child_ports = [
-                                conn.laddr.port
-                                for conn in child_connections
-                                if conn.laddr
-                            ]
-                            ports.extend(child_ports)
-                            debug_logger.debug(f"Child PID {child.pid} ports: {child_ports}")
-                        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                            debug_logger.debug(f"Could not get connections for child {child.pid}: {e}")
-                            continue
-                    ports = sorted(set(ports))  # Remove duplicates and sort
-                except (AttributeError, psutil.Error) as e:
-                    debug_logger.debug(f"Error collecting child processes: {e}")
-                    children = []
-                    
-                debug_logger.debug(f"Filtered listening ports (main + children): {ports}")
-                
-                try:
-                    io_counters = proc.io_counters() if proc.is_running() else None
-                except (AttributeError, psutil.Error):
-                    io_counters = None
+                ports, _ = _collect_ports(proc)
                 try:
                     open_files = proc.open_files() if proc.is_running() else []
                 except (AttributeError, psutil.Error):
@@ -237,8 +205,6 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                         "user": user,
                         "ports": ports,
                         "threads": proc.num_threads(),
-                        "io_read_bytes": io_counters.read_bytes if io_counters else None,
-                        "io_write_bytes": io_counters.write_bytes if io_counters else None,
                         "open_files": len(open_files),
                         "connections": len(conns),
                         "children": len(children),
@@ -255,8 +221,6 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                         "user": None,
                         "ports": None,
                         "threads": None,
-                        "io_read_bytes": None,
-                        "io_write_bytes": None,
                         "open_files": None,
                         "connections": None,
                         "children": None,
@@ -285,60 +249,7 @@ async def get_status(format: str = Query("text")):
                 cpu = proc.cpu_percent(interval=0.0)
                 mem = proc.memory_info().rss
                 user = proc.username()
-                
-                # Debug: Log connection collection attempt
-                debug_logger.debug(f"[get_status] Collecting connections for PID {status['process_pid']}")
-                try:
-                    all_connections = proc.connections(kind="all")
-                    debug_logger.debug(f"[get_status] Found {len(all_connections)} all connections")
-                    for conn in all_connections:
-                        debug_logger.debug(f"[get_status]   Connection: {conn.status}, laddr={conn.laddr}, raddr={conn.raddr}")
-                except psutil.AccessDenied as e:
-                    debug_logger.debug(f"[get_status] AccessDenied getting connections: {e}")
-                    all_connections = []
-                except Exception as e:
-                    debug_logger.debug(f"[get_status] Error getting connections: {type(e).__name__}: {e}")
-                    all_connections = []
-                
-                # Collect ports from main process
-                ports = sorted(
-                    {
-                        conn.laddr.port
-                        for conn in all_connections
-                        if conn.laddr
-                    }
-                )
-                debug_logger.debug(f"[get_status] Main process ports: {ports}")
-                
-                # Also collect ports from child processes
-                try:
-                    children = proc.children(recursive=True) if proc.is_running() else []
-                    debug_logger.debug(f"[get_status] Found {len(children)} child processes")
-                    for child in children:
-                        try:
-                            child_connections = child.connections(kind="all")
-                            debug_logger.debug(f"[get_status] Child PID {child.pid}: {len(child_connections)} connections")
-                            child_ports = [
-                                conn.laddr.port
-                                for conn in child_connections
-                                if conn.laddr
-                            ]
-                            ports.extend(child_ports)
-                            debug_logger.debug(f"[get_status] Child PID {child.pid} ports: {child_ports}")
-                        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                            debug_logger.debug(f"[get_status] Could not get connections for child {child.pid}: {e}")
-                            continue
-                    ports = sorted(set(ports))  # Remove duplicates and sort
-                except (AttributeError, psutil.Error) as e:
-                    debug_logger.debug(f"[get_status] Error collecting child processes: {e}")
-                    children = []
-                    
-                debug_logger.debug(f"[get_status] Filtered listening ports (main + children): {ports}")
-                
-                try:
-                    io_counters = proc.io_counters() if proc.is_running() else None
-                except (AttributeError, psutil.Error):
-                    io_counters = None
+                ports, _ = _collect_ports(proc)
                 try:
                     open_files = proc.open_files() if proc.is_running() else []
                 except (AttributeError, psutil.Error):
@@ -363,8 +274,6 @@ async def get_status(format: str = Query("text")):
                         "user": user,
                         "ports": ports,
                         "threads": proc.num_threads(),
-                        "io_read_bytes": io_counters.read_bytes if io_counters else None,
-                        "io_write_bytes": io_counters.write_bytes if io_counters else None,
                         "open_files": len(open_files),
                         "connections": len(conns),
                         "children": len(children),
@@ -381,8 +290,6 @@ async def get_status(format: str = Query("text")):
                         "user": None,
                         "ports": None,
                         "threads": None,
-                        "io_read_bytes": None,
-                        "io_write_bytes": None,
                         "open_files": None,
                         "connections": None,
                         "children": None,
@@ -408,8 +315,6 @@ async def get_status(format: str = Query("text")):
             "user": None,
             "ports": None,
             "threads": None,
-            "io_read_bytes": None,
-            "io_write_bytes": None,
             "open_files": None,
             "connections": None,
             "children": None,
