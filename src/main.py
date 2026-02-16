@@ -111,7 +111,6 @@ def _start_text(payload: dict) -> str:
             f"command: {payload.get('command', '-')}",
             f"status: {payload.get('status', '-')}",
             f"pid: {payload.get('process_pid', '-')}",
-            f"log_file: {payload.get('log_file', '-')}",
             f"created_at: {payload.get('created_at', '-')}",
         ]
     )
@@ -240,6 +239,7 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                         "uptime_seconds": None,
                     }
                 )
+            status.pop("log_file", None)
         if format == "json":
             return status
         return PlainTextResponse(_status_text(status))
@@ -339,6 +339,7 @@ async def get_status(format: str = Query("text")):
                         "uptime_seconds": None,
                     }
                 )
+            status.pop("log_file", None)
         if format == "json":
             return status
         return PlainTextResponse(_status_text(status))
@@ -348,7 +349,6 @@ async def get_status(format: str = Query("text")):
             "status": "not_started",
             "created_at": datetime.now(timezone.utc),
             "process_pid": None,
-            "log_file": "",
             "stopped_at": None,
             "exit_code": None,
             "cpu_percent": None,
@@ -394,6 +394,7 @@ async def restart_process(timeout: int = Query(10, ge=1), format: str = Query("t
         log_file = log_manager.create_log_file()
         status = process_manager.restart(log_file=log_file, timeout=timeout)
         log_manager.start_logging(process_manager.get_process(), log_file)
+        status.pop("log_file", None)
         if format == "json":
             return status
         return PlainTextResponse(_start_text(status))
