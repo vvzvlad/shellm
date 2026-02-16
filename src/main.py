@@ -131,6 +131,12 @@ async def start_process(request: StartRequest, format: str = Query("text")):
         log_manager.start_logging(process_manager.get_process(), log_file)
         await asyncio.sleep(2)
         status = process_manager.get_status()
+        if status.get("status") == "exited":
+            try:
+                log_tail = log_manager.read_logs(status["log_file"], lines=100).get("content", "")
+            except (BadRequestError, NotFoundError):
+                log_tail = ""
+            status["log_tail"] = log_tail
         if status.get("process_pid") and status.get("status") == "running":
             try:
                 proc = psutil.Process(status["process_pid"])

@@ -16,6 +16,7 @@ class ProcessStatus(BaseModel):
     created_at: datetime
     process_pid: Optional[int]
     log_file: str
+    log_tail: Optional[str] = None
     stopped_at: Optional[datetime] = None
     exit_code: Optional[int] = None
     cpu_percent: Optional[float] = None
