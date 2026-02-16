@@ -159,75 +159,79 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
     curses.curs_set(0)
     stdscr.nodelay(True)
 
-    while not stop_event.is_set():
-        stdscr.erase()
-        height, width = stdscr.getmaxyx()
-        split = height // 2
-        side_width = max(28, width // 3)
-        right_width = max(20, width - side_width)
-        right_x = side_width
+    try:
+        while not stop_event.is_set():
+            stdscr.erase()
+            height, width = stdscr.getmaxyx()
+            split = height // 2
+            side_width = max(28, width // 3)
+            right_width = max(20, width - side_width)
+            right_x = side_width
 
-        with status_lock:
-            status = status_info.copy()
+            with status_lock:
+                status = status_info.copy()
 
-        current_status = status.get("status", "-")
-        show_runtime = current_status == "running"
+            current_status = status.get("status", "-")
+            show_runtime = current_status == "running"
 
-        status_lines = deque(maxlen=100)
-        label_width = 8
-        value_width = 12
-        spark_width = max(1, side_width - label_width - value_width - 1)
-        def row(label: str, value: str) -> str:
-            return f"{label.ljust(label_width)}{value}"
+            status_lines = deque(maxlen=100)
+            label_width = 8
+            value_width = 12
+            spark_width = max(1, side_width - label_width - value_width - 1)
+            def row(label: str, value: str) -> str:
+                return f"{label.ljust(label_width)}{value}"
 
-        def row_with_spark(label: str, value: str, history: list[float]) -> str:
-            spark = _sparkline(history, spark_width)
-            return f"{label.ljust(label_width)}{value.ljust(value_width)}{spark}"
+            def row_with_spark(label: str, value: str, history: list[float]) -> str:
+                spark = _sparkline(history, spark_width)
+                return f"{label.ljust(label_width)}{value.ljust(value_width)}{spark}"
 
-        status_lines.append(row("STATUS", current_status))
-        status_lines.append(row("PID", str(status.get('pid', '-') if show_runtime else '-')))
-        status_lines.append(row("UPTIME", str(status.get('uptime', '-') if show_runtime else '-')))
-        status_lines.append(row("USER", str(status.get('user', '-') if show_runtime else '-')))
-        status_lines.append(row("THR", str(status.get('threads', '-') if show_runtime else '-')))
-        status_lines.append(row("FILES", str(status.get('open_files', '-') if show_runtime else '-')))
-        status_lines.append(row("CONNS", str(status.get('connections', '-') if show_runtime else '-')))
-        status_lines.append(row("CHILD", str(status.get('children', '-') if show_runtime else '-')))
-        status_lines.append(row("ENV", str(status.get('env_count', '-') if show_runtime else '-')))
-        ports = status.get("ports") if show_runtime else None
-        status_lines.append(row("PORTS", str(ports if ports else '-')))
+            status_lines.append(row("STATUS", current_status))
+            status_lines.append(row("PID", str(status.get('pid', '-') if show_runtime else '-')))
+            status_lines.append(row("UPTIME", str(status.get('uptime', '-') if show_runtime else '-')))
+            status_lines.append(row("USER", str(status.get('user', '-') if show_runtime else '-')))
+            status_lines.append(row("THR", str(status.get('threads', '-') if show_runtime else '-')))
+            status_lines.append(row("FILES", str(status.get('open_files', '-') if show_runtime else '-')))
+            status_lines.append(row("CONNS", str(status.get('connections', '-') if show_runtime else '-')))
+            status_lines.append(row("CHILD", str(status.get('children', '-') if show_runtime else '-')))
+            status_lines.append(row("ENV", str(status.get('env_count', '-') if show_runtime else '-')))
+            ports = status.get("ports") if show_runtime else None
+            status_lines.append(row("PORTS", str(ports if ports else '-')))
 
-        cpu_value = str(status.get('cpu', '-') if show_runtime else '-')
-        mem_value = str(status.get('mem', '-') if show_runtime else '-')
-        io_value = str(status.get('io_rate', '-') if show_runtime else '-')
-        status_lines.append(row_with_spark("CPU", cpu_value, status.get("cpu_history", [])))
-        status_lines.append(row_with_spark("MEM", mem_value, status.get("mem_history", [])))
-        status_lines.append(row_with_spark("IO", io_value, status.get("io_history", [])))
-        status_lines.append("")
-        status_lines.append("COMMAND:")
-        command = status.get("command", "-") or "-"
-        for line in _wrap_text(command, side_width - 2):
-            status_lines.append(line)
+            cpu_value = str(status.get('cpu', '-') if show_runtime else '-')
+            mem_value = str(status.get('mem', '-') if show_runtime else '-')
+            io_value = str(status.get('io_rate', '-') if show_runtime else '-')
+            status_lines.append(row_with_spark("CPU", cpu_value, status.get("cpu_history", [])))
+            status_lines.append(row_with_spark("MEM", mem_value, status.get("mem_history", [])))
+            status_lines.append(row_with_spark("IO", io_value, status.get("io_history", [])))
+            status_lines.append("")
+            status_lines.append("COMMAND:")
+            command = status.get("command", "-") or "-"
+            for line in _wrap_text(command, side_width - 2):
+                status_lines.append(line)
 
-        wrapped_app_lines = deque()
-        wrap_width = max(1, right_width - 2)
-        for line in app_lines:
-            for wrapped_line in _wrap_text(line, wrap_width):
-                wrapped_app_lines.append(wrapped_line)
+            wrapped_app_lines = deque()
+            wrap_width = max(1, right_width - 2)
+            for line in app_lines:
+                for wrapped_line in _wrap_text(line, wrap_width):
+                    wrapped_app_lines.append(wrapped_line)
 
-        _draw_pane(stdscr, 0, 0, height, side_width, " STATUS ", status_lines)
-        _draw_pane(stdscr, 0, right_x, split, right_width, " API SERVER LOGS (q to quit) ", api_lines)
-        _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS (k to SIGTERM, K/9 to SIGKILL))", wrapped_app_lines)
+            _draw_pane(stdscr, 0, 0, height, side_width, " STATUS ", status_lines)
+            _draw_pane(stdscr, 0, right_x, split, right_width, " API SERVER LOGS (q to quit) ", api_lines)
+            _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS (k to SIGTERM, K/9 to SIGKILL))", wrapped_app_lines)
 
-        stdscr.refresh()
-        ch = stdscr.getch()
-        if ch in (ord("q"), ord("Q")):
-            stop_event.set()
-            break
-        if ch == ord("k"):
-            kill_term()
-        if ch in (ord("K"), ord("9")):
-            kill_kill()
-        time.sleep(0.1)
+            stdscr.refresh()
+            ch = stdscr.getch()
+            if ch in (ord("q"), ord("Q")):
+                stop_event.set()
+                break
+            if ch == ord("k"):
+                kill_term()
+            if ch in (ord("K"), ord("9")):
+                kill_kill()
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        stop_event.set()
+        return
 
 
 def main() -> None:
@@ -375,6 +379,8 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
 
     try:
         curses.wrapper(_run_tui, api_lines, app_lines, status_info, status_lock, stop_event, kill_term, kill_kill)
+    except KeyboardInterrupt:
+        stop_event.set()
     finally:
         stop_event.set()
         if api_process and api_process.poll() is None:
