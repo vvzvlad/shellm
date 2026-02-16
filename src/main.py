@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from .config import settings
 from .exceptions import BadRequestError, ConflictError, InternalError, NotFoundError
 from .log_manager import LogManager
-from .models import HealthResponse, KillResponse, LogsResponse, ProcessStatus, StartRequest
+from .models import HealthResponse, KillResponse, LogsResponse, ProcessStatus
 from .process_manager import ProcessManager
 from .tui import run_tui
 
@@ -154,14 +154,30 @@ async def health_check() -> dict:
 
 
 @app.post("/start", status_code=201)
-async def start_process(request: StartRequest, format: str = Query("text")):
-    if not request.command.strip():
+async def start_process(request: Request, format: str = Query("text")):
+    try:
+        content_type = request.headers.get("content-type", "")
+        command = ""
+        if "application/json" in content_type:
+            try:
+                payload = await request.json()
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                command = str(payload.get("command", "") or "")
+        else:
+            body = await request.body()
+            command = body.decode("utf-8", errors="ignore") if body else("")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid request body") from exc
+
+    if not command.strip():
         raise HTTPException(status_code=400, detail="Command cannot be empty")
 
     try:
-        access_logger.info("start command=%r", request.command)
+        access_logger.info("start command=%r", command)
         log_file = log_manager.create_log_file()
-        status = process_manager.start(request.command, log_file)
+        status = process_manager.start(command, log_file)
         log_manager.start_logging(process_manager.get_process(), log_file)
         wait_until = time.monotonic() + 2.0
         while True:
