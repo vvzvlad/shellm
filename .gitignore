@@ -1,2 +1,25 @@
-*.pyc
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Test/cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
 logs/
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Environment
+.env
