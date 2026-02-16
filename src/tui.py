@@ -34,6 +34,15 @@ def _get_json(url: str, headers: Optional[dict] = None) -> Optional[dict]:
         return None
 
 
+def _get_text(url: str, headers: Optional[dict] = None) -> Optional[str]:
+    try:
+        request = urllib.request.Request(url, headers=headers or {})
+        with urllib.request.urlopen(request, timeout=2) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.URLError:
+        return None
+
+
 def _post_json(url: str, headers: Optional[dict] = None) -> Optional[dict]:
     try:
         request = urllib.request.Request(url, method="POST", headers=headers or {})
@@ -63,6 +72,20 @@ def _format_uptime(created_at: Optional[str]) -> str:
     if seconds < 0:
         return "-"
     minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{sec:02d}s"
+    if minutes:
+        return f"{minutes}m{sec:02d}s"
+    return f"{sec}s"
+
+
+def _format_duration(seconds: Optional[int]) -> str:
+    if seconds is None:
+        return "-"
+    if seconds < 0:
+        return "-"
+    minutes, sec = divmod(int(seconds), 60)
     hours, minutes = divmod(minutes, 60)
     if hours:
         return f"{hours}h{minutes:02d}m{sec:02d}s"
@@ -107,6 +130,18 @@ def _wrap_text(text: str, max_width: int) -> list[str]:
     return lines
 
 
+def _format_bytes(value: Optional[int]) -> str:
+    if value is None:
+        return "-"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(value)
+    idx = 0
+    while size >= 1024 and idx < len(units) - 1:
+        size /= 1024
+        idx += 1
+    return f"{size:.1f} {units[idx]}"
+
+
 def _sparkline(values: list[float], max_points: int) -> str:
     if not values:
         return "-"
@@ -140,25 +175,33 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
 
         status_lines = deque(maxlen=100)
         label_width = 8
-        spark_width = max(1, side_width - 2)
+        value_width = 12
+        spark_width = max(1, side_width - label_width - value_width - 1)
         def row(label: str, value: str) -> str:
             return f"{label.ljust(label_width)}{value}"
+
+        def row_with_spark(label: str, value: str, history: list[float]) -> str:
+            spark = _sparkline(history, spark_width)
+            return f"{label.ljust(label_width)}{value.ljust(value_width)}{spark}"
 
         status_lines.append(row("STATUS", current_status))
         status_lines.append(row("PID", str(status.get('pid', '-') if show_runtime else '-')))
         status_lines.append(row("UPTIME", str(status.get('uptime', '-') if show_runtime else '-')))
-        status_lines.append(row("CPU", str(status.get('cpu', '-') if show_runtime else '-')))
-        status_lines.append(row("MEM", str(status.get('mem', '-') if show_runtime else '-')))
         status_lines.append(row("USER", str(status.get('user', '-') if show_runtime else '-')))
+        status_lines.append(row("THR", str(status.get('threads', '-') if show_runtime else '-')))
+        status_lines.append(row("FILES", str(status.get('open_files', '-') if show_runtime else '-')))
+        status_lines.append(row("CONNS", str(status.get('connections', '-') if show_runtime else '-')))
+        status_lines.append(row("CHILD", str(status.get('children', '-') if show_runtime else '-')))
+        status_lines.append(row("ENV", str(status.get('env_count', '-') if show_runtime else '-')))
         ports = status.get("ports") if show_runtime else None
         status_lines.append(row("PORTS", str(ports if ports else '-')))
-        status_lines.append("")
+
         cpu_value = str(status.get('cpu', '-') if show_runtime else '-')
         mem_value = str(status.get('mem', '-') if show_runtime else '-')
-        status_lines.append(row("CPU", cpu_value))
-        status_lines.append(_sparkline(status.get("cpu_history", []), spark_width))
-        status_lines.append(row("MEM", mem_value))
-        status_lines.append(_sparkline(status.get("mem_history", []), spark_width))
+        io_value = str(status.get('io_rate', '-') if show_runtime else '-')
+        status_lines.append(row_with_spark("CPU", cpu_value, status.get("cpu_history", [])))
+        status_lines.append(row_with_spark("MEM", mem_value, status.get("mem_history", [])))
+        status_lines.append(row_with_spark("IO", io_value, status.get("io_history", [])))
         status_lines.append("")
         status_lines.append("COMMAND:")
         command = status.get("command", "-") or "-"
@@ -215,8 +258,11 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
         "ports": "-",
     }
     last_status: Optional[str] = None
-    cpu_history: Deque[float] = deque(maxlen=200)
-    mem_history: Deque[float] = deque(maxlen=200)
+    cpu_history: Deque[float] = deque(maxlen=400)
+    mem_history: Deque[float] = deque(maxlen=400)
+    io_history: Deque[float] = deque(maxlen=400)
+    last_io_total: Optional[int] = None
+    last_io_time: Optional[float] = None
 
     api_process: Optional[subprocess.Popen] = None
     if not attach:
@@ -247,22 +293,42 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
     def poll_app_logs() -> None:
         base_url = f"http://{host}:{port}"
         headers = {"x-llm-shell-tui": "1"}
-        nonlocal last_status
+        nonlocal last_status, last_io_total, last_io_time
         while not stop_event.is_set():
-            status = _get_json(f"{base_url}/status", headers=headers)
+            status = _get_json(f"{base_url}/status?format=json", headers=headers)
             if status:
                 with status_lock:
                     status_info["status"] = status.get("status") or "-"
                     status_info["pid"] = status.get("process_pid") or "-"
                     status_info["command"] = status.get("command") or "-"
-                    status_info["uptime"] = _format_uptime(status.get("created_at"))
+                    uptime_seconds = status.get("uptime_seconds")
+                    status_info["uptime"] = _format_duration(uptime_seconds)
                     cpu = status.get("cpu_percent")
                     mem = status.get("memory_mb")
                     status_info["cpu"] = f"{cpu:.1f}%" if isinstance(cpu, (int, float)) else "-"
                     status_info["mem"] = f"{mem:.1f} MB" if isinstance(mem, (int, float)) else "-"
                     status_info["user"] = status.get("user") or "-"
+                    status_info["threads"] = status.get("threads")
+                    status_info["open_files"] = status.get("open_files")
+                    status_info["connections"] = status.get("connections")
+                    status_info["children"] = status.get("children")
+                    status_info["env_count"] = status.get("env_count")
                     ports = status.get("ports")
                     status_info["ports"] = ",".join(str(p) for p in ports) if ports else "-"
+                    read_bytes = status.get("io_read_bytes")
+                    write_bytes = status.get("io_write_bytes")
+                    now = time.time()
+                    if isinstance(read_bytes, int) and isinstance(write_bytes, int):
+                        total = read_bytes + write_bytes
+                        if last_io_total is not None and last_io_time is not None:
+                            delta_bytes = max(0, total - last_io_total)
+                            delta_time = max(0.001, now - last_io_time)
+                            rate = delta_bytes / delta_time
+                            status_info["io_rate"] = f"{_format_bytes(int(rate))}/s"
+                            io_history.append(min(100.0, rate / (1024 * 1024) * 10))
+                        last_io_total = total
+                        last_io_time = now
+                    status_info["io_history"] = list(io_history)
                     if isinstance(cpu, (int, float)):
                         cpu_history.append(float(cpu))
                     if isinstance(mem, (int, float)):
@@ -277,13 +343,13 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
                 last_status = current_status
 
             if status and status.get("log_file"):
-                logs = _get_json(f"{base_url}/logs?lines={lines}", headers=headers)
-                if logs and logs.get("content"):
+                logs_text = _get_text(f"{base_url}/logs?lines={lines}", headers=headers)
+                if logs_text is not None:
                     app_lines.clear()
-                    app_lines.extend(logs["content"].splitlines())
-                elif logs and logs.get("content") == "":
-                    app_lines.clear()
-                    app_lines.append("[no logs yet]")
+                    if logs_text.strip():
+                        app_lines.extend(logs_text.splitlines())
+                    else:
+                        app_lines.append("[no logs yet]")
             else:
                 app_lines.clear()
                 app_lines.append("[process not started]")

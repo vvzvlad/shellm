@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -10,7 +11,7 @@ import psutil
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .config import settings
 from .exceptions import BadRequestError, ConflictError, InternalError, NotFoundError
@@ -55,14 +56,70 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=400, content={"error": "Invalid request", "details": exc.errors()})
 
 
+def _format_duration(seconds: Optional[int]) -> str:
+    if seconds is None:
+        return "-"
+
+    if isinstance(seconds, float):
+        sec = int(seconds)
+    else:
+        sec = seconds
+
+    return f"{sec}s"
+
+
+def _status_text(payload: dict) -> str:
+    lines = []
+    lines.append(f"status: {payload.get('status', '-')}")
+    lines.append(f"pid: {payload.get('process_pid', '-')}")
+    lines.append(f"uptime: {_format_duration(payload.get('uptime_seconds'))}")
+    lines.append(f"command: {payload.get('command', '-')}")
+    lines.append(f"user: {payload.get('user', '-')}")
+    ports = payload.get("ports") or []
+    lines.append(f"ports: {','.join(str(p) for p in ports) if ports else '-'}")
+    lines.append(f"cpu: {payload.get('cpu_percent', '-')}")
+    lines.append(f"mem_mb: {payload.get('memory_mb', '-')}")
+    lines.append(f"threads: {payload.get('threads', '-')}")
+    lines.append(f"open_files: {payload.get('open_files', '-')}")
+    lines.append(f"connections: {payload.get('connections', '-')}")
+    lines.append(f"children: {payload.get('children', '-')}")
+    lines.append(f"env_count: {payload.get('env_count', '-')}")
+    lines.append(f"io_read_bytes: {payload.get('io_read_bytes', '-')}")
+    lines.append(f"io_write_bytes: {payload.get('io_write_bytes', '-')}")
+    return "\n".join(lines)
+
+
+def _start_text(payload: dict) -> str:
+    return "\n".join(
+        [
+            f"command: {payload.get('command', '-')}",
+            f"status: {payload.get('status', '-')}",
+            f"pid: {payload.get('process_pid', '-')}",
+            f"log_file: {payload.get('log_file', '-')}",
+            f"created_at: {payload.get('created_at', '-')}",
+        ]
+    )
+
+
+def _kill_text(payload: dict) -> str:
+    return "\n".join(
+        [
+            f"status: {payload.get('status', '-')}",
+            f"type: {payload.get('type', '-')}",
+            f"exit_code: {payload.get('exit_code', '-')}",
+            f"stopped_at: {payload.get('stopped_at', '-')}",
+        ]
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> dict:
     uptime = int((datetime.now(timezone.utc) - start_time).total_seconds())
     return {"status": "healthy", "version": "1.0.0", "uptime": uptime}
 
 
-@app.post("/start", status_code=201, response_model=ProcessStatus)
-async def start_process(request: StartRequest) -> dict:
+@app.post("/start", status_code=201)
+async def start_process(request: StartRequest, format: str = Query("text")):
     if not request.command.strip():
         raise HTTPException(status_code=400, detail="Command cannot be empty")
 
@@ -71,15 +128,17 @@ async def start_process(request: StartRequest) -> dict:
         log_file = log_manager.create_log_file()
         status = process_manager.start(request.command, log_file)
         log_manager.start_logging(process_manager.get_process(), log_file)
-        return status
+        if format == "json":
+            return status
+        return PlainTextResponse(_start_text(status))
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except InternalError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.get("/status", response_model=ProcessStatus)
-async def get_status() -> dict:
+@app.get("/status")
+async def get_status(format: str = Query("text")):
     try:
         status = process_manager.get_status()
         if status.get("process_pid") and status.get("status") == "running":
@@ -95,12 +154,42 @@ async def get_status() -> dict:
                         if conn.status == psutil.CONN_LISTEN and conn.laddr
                     }
                 )
+                try:
+                    io_counters = proc.io_counters() if proc.is_running() else None
+                except (AttributeError, psutil.Error):
+                    io_counters = None
+                try:
+                    open_files = proc.open_files() if proc.is_running() else []
+                except (AttributeError, psutil.Error):
+                    open_files = []
+                try:
+                    conns = proc.connections(kind="inet") if proc.is_running() else []
+                except (AttributeError, psutil.Error):
+                    conns = []
+                try:
+                    children = proc.children(recursive=True) if proc.is_running() else []
+                except (AttributeError, psutil.Error):
+                    children = []
+                try:
+                    env = proc.environ() if proc.is_running() else {}
+                except (AttributeError, psutil.Error):
+                    env = {}
+                uptime_seconds = int(max(0.0, time.time() - proc.create_time()))
                 status.update(
                     {
                         "cpu_percent": cpu,
                         "memory_mb": mem / (1024 * 1024),
                         "user": user,
                         "ports": ports,
+                        "threads": proc.num_threads(),
+                        "io_read_bytes": io_counters.read_bytes if io_counters else None,
+                        "io_write_bytes": io_counters.write_bytes if io_counters else None,
+                        "open_files": len(open_files),
+                        "connections": len(conns),
+                        "children": len(children),
+                        "env_count": len(env),
+                        "env_keys": sorted(list(env.keys()))[:10],
+                        "uptime_seconds": uptime_seconds,
                     }
                 )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -110,11 +199,22 @@ async def get_status() -> dict:
                         "memory_mb": None,
                         "user": None,
                         "ports": None,
+                        "threads": None,
+                        "io_read_bytes": None,
+                        "io_write_bytes": None,
+                        "open_files": None,
+                        "connections": None,
+                        "children": None,
+                        "env_count": None,
+                        "env_keys": None,
+                        "uptime_seconds": None,
                     }
                 )
-        return status
+        if format == "json":
+            return status
+        return PlainTextResponse(_status_text(status))
     except NotFoundError:
-        return {
+        payload = {
             "command": "",
             "status": "exited",
             "created_at": datetime.now(timezone.utc),
@@ -126,43 +226,63 @@ async def get_status() -> dict:
             "memory_mb": None,
             "user": None,
             "ports": None,
+            "threads": None,
+            "io_read_bytes": None,
+            "io_write_bytes": None,
+            "open_files": None,
+            "connections": None,
+            "children": None,
+            "env_count": None,
+            "env_keys": None,
+            "uptime_seconds": None,
         }
+        if format == "json":
+            return payload
+        return PlainTextResponse(_status_text(payload))
 
 
-@app.post("/kill", response_model=KillResponse)
-async def kill_process(type: str = Query("SIGTERM", pattern="^(SIGTERM|SIGKILL)$")) -> dict:
+@app.post("/kill")
+async def kill_process(
+    type: str = Query("SIGTERM", pattern="^(SIGTERM|SIGKILL)$"),
+    format: str = Query("text"),
+):
     try:
         result = process_manager.kill(type)
         log_manager.stop_logging()
-        return result
+        if format == "json":
+            return result
+        return PlainTextResponse(_kill_text(result))
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BadRequestError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/restart", response_model=ProcessStatus)
-async def restart_process(timeout: int = Query(10, ge=1)) -> dict:
+@app.post("/restart")
+async def restart_process(timeout: int = Query(10, ge=1), format: str = Query("text")):
     try:
         log_manager.stop_logging()
         log_file = log_manager.create_log_file()
         status = process_manager.restart(log_file=log_file, timeout=timeout)
         log_manager.start_logging(process_manager.get_process(), log_file)
-        return status
+        if format == "json":
+            return status
+        return PlainTextResponse(_start_text(status))
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InternalError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.get("/logs", response_model=LogsResponse)
+@app.get("/logs", response_class=PlainTextResponse)
 async def get_logs(
     lines: Optional[int] = Query(None, ge=1),
     seconds: Optional[int] = Query(None, ge=1),
-) -> dict:
+) -> PlainTextResponse:
     try:
         status = process_manager.get_status()
-        return log_manager.read_logs(status["log_file"], lines, seconds)
+        result = log_manager.read_logs(status["log_file"], lines, seconds)
+        return PlainTextResponse(result["content"])
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BadRequestError as exc:

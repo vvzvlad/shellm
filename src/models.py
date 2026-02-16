@@ -22,6 +22,15 @@ class ProcessStatus(BaseModel):
     memory_mb: Optional[float] = None
     user: Optional[str] = None
     ports: Optional[list[int]] = None
+    threads: Optional[int] = None
+    io_read_bytes: Optional[int] = None
+    io_write_bytes: Optional[int] = None
+    open_files: Optional[int] = None
+    connections: Optional[int] = None
+    children: Optional[int] = None
+    env_count: Optional[int] = None
+    env_keys: Optional[list[str]] = None
+    uptime_seconds: Optional[int] = None
 
 
 class KillResponse(BaseModel):
