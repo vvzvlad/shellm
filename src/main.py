@@ -32,6 +32,15 @@ if not access_logger.handlers:
     access_logger.setLevel(logging.INFO)
     access_logger.propagate = False
 
+# Add debug logger for port collection diagnostics
+debug_logger = logging.getLogger("llm_shell.debug")
+if not debug_logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("DEBUG [ports]: %(message)s"))
+    debug_logger.addHandler(handler)
+    debug_logger.setLevel(logging.DEBUG)
+    debug_logger.propagate = False
+
 
 async def lifespan(app: FastAPI):
     yield
@@ -143,13 +152,30 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                 cpu = proc.cpu_percent(interval=0.0)
                 mem = proc.memory_info().rss
                 user = proc.username()
+                
+                # Debug: Log connection collection attempt
+                debug_logger.debug(f"Collecting connections for PID {status['process_pid']}")
+                try:
+                    all_connections = proc.connections(kind="all")
+                    debug_logger.debug(f"Found {len(all_connections)} all connections")
+                    for conn in all_connections:
+                        debug_logger.debug(f"  Connection: {conn.status}, laddr={conn.laddr}, raddr={conn.raddr}")
+                except psutil.AccessDenied as e:
+                    debug_logger.debug(f"AccessDenied getting connections: {e}")
+                    all_connections = []
+                except Exception as e:
+                    debug_logger.debug(f"Error getting connections: {type(e).__name__}: {e}")
+                    all_connections = []
+                
                 ports = sorted(
                     {
                         conn.laddr.port
-                        for conn in proc.connections(kind="inet")
-                        if conn.status == psutil.CONN_LISTEN and conn.laddr
+                        for conn in all_connections
+                        if conn.laddr
                     }
                 )
+                debug_logger.debug(f"Filtered listening ports: {ports}")
+                
                 try:
                     io_counters = proc.io_counters() if proc.is_running() else None
                 except (AttributeError, psutil.Error):
@@ -225,13 +251,30 @@ async def get_status(format: str = Query("text")):
                 cpu = proc.cpu_percent(interval=0.0)
                 mem = proc.memory_info().rss
                 user = proc.username()
+                
+                # Debug: Log connection collection attempt
+                debug_logger.debug(f"[get_status] Collecting connections for PID {status['process_pid']}")
+                try:
+                    all_connections = proc.connections(kind="all")
+                    debug_logger.debug(f"[get_status] Found {len(all_connections)} all connections")
+                    for conn in all_connections:
+                        debug_logger.debug(f"[get_status]   Connection: {conn.status}, laddr={conn.laddr}, raddr={conn.raddr}")
+                except psutil.AccessDenied as e:
+                    debug_logger.debug(f"[get_status] AccessDenied getting connections: {e}")
+                    all_connections = []
+                except Exception as e:
+                    debug_logger.debug(f"[get_status] Error getting connections: {type(e).__name__}: {e}")
+                    all_connections = []
+                
                 ports = sorted(
                     {
                         conn.laddr.port
-                        for conn in proc.connections(kind="inet")
-                        if conn.status == psutil.CONN_LISTEN and conn.laddr
+                        for conn in all_connections
+                        if conn.laddr
                     }
                 )
+                debug_logger.debug(f"[get_status] Filtered listening ports: {ports}")
+                
                 try:
                     io_counters = proc.io_counters() if proc.is_running() else None
                 except (AttributeError, psutil.Error):
