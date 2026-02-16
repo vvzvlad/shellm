@@ -20,7 +20,8 @@ def _read_lines(stream, buffer: Deque[str], stop_event: threading.Event) -> None
         if not line:
             time.sleep(0.05)
             continue
-        buffer.append(line.rstrip("\n"))
+        timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        buffer.append(f"{timestamp} {line.rstrip('\n')}")
 
 
 def _get_json(url: str, headers: Optional[dict] = None) -> Optional[dict]:
@@ -192,6 +193,7 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
         "user": "-",
         "ports": "-",
     }
+    last_status: Optional[str] = None
 
     api_process: Optional[subprocess.Popen] = None
     if not attach:
@@ -222,6 +224,7 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
     def poll_app_logs() -> None:
         base_url = f"http://{host}:{port}"
         headers = {"x-llm-shell-tui": "1"}
+        nonlocal last_status
         while not stop_event.is_set():
             status = _get_json(f"{base_url}/status", headers=headers)
             if status:
@@ -237,6 +240,12 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
                     status_info["user"] = status.get("user") or "-"
                     ports = status.get("ports")
                     status_info["ports"] = ",".join(str(p) for p in ports) if ports else "-"
+
+                current_status = status.get("status")
+                if last_status == "running" and current_status in {"exited", "killed"}:
+                    timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+                    api_lines.append(f"{timestamp} status changed: running -> {current_status}")
+                last_status = current_status
 
             if status and status.get("log_file"):
                 logs = _get_json(f"{base_url}/logs?lines={lines}", headers=headers)
