@@ -103,12 +103,21 @@ def _draw_pane(
     title: str,
     lines: Deque[str],
 ) -> None:
-    stdscr.addstr(y, x, title.ljust(width - 1)[: width - 1], curses.A_REVERSE)
-    max_lines = height - 1
+    if height <= 0 or width <= 1:
+        return
+    max_width = max(1, width - 1)
+    try:
+        stdscr.addstr(y, x, title.ljust(max_width)[:max_width], curses.A_REVERSE)
+    except curses.error:
+        return
+    max_lines = max(0, height - 1)
     visible = list(lines)[-max_lines:]
     for idx in range(max_lines):
         line = visible[idx] if idx < len(visible) else ""
-        stdscr.addstr(y + 1 + idx, x, line.ljust(width - 1)[: width - 1])
+        try:
+            stdscr.addstr(y + 1 + idx, x, line.ljust(max_width)[:max_width])
+        except curses.error:
+            break
 
 
 def _wrap_text(text: str, max_width: int) -> list[str]:
@@ -352,17 +361,18 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
                     api_lines.append(f"{timestamp} status changed: running -> {current_status}")
                 last_status = current_status
 
-            if status and status.get("log_file"):
+            if status:
                 logs_text = _get_text(f"{base_url}/logs?lines={lines}", headers=headers)
-                if logs_text is not None:
-                    app_lines.clear()
-                    if logs_text.strip():
-                        app_lines.extend(logs_text.splitlines())
-                    else:
-                        app_lines.append("[no logs yet]")
+                app_lines.clear()
+                if logs_text is None:
+                    app_lines.append("[unable to fetch logs]")
+                elif logs_text.strip():
+                    app_lines.extend(logs_text.splitlines())
+                else:
+                    app_lines.append("[no logs yet]")
             else:
                 app_lines.clear()
-                app_lines.append("[process not started]")
+                app_lines.append("[api server unavailable]")
             time.sleep(poll)
 
     def kill_term() -> None:
