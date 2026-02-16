@@ -1,8 +1,11 @@
-from __future__ import annotations
-
-import subprocess
 from datetime import datetime, timezone
 from typing import Optional
+
+import os
+import signal
+import subprocess
+
+import psutil
 
 from .exceptions import BadRequestError, ConflictError, InternalError, NotFoundError
 
@@ -33,6 +36,7 @@ class ProcessManager:
             self._process = subprocess.Popen(
                 command,
                 shell=True,
+                start_new_session=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 bufsize=1,
@@ -64,10 +68,29 @@ class ProcessManager:
         if not self.is_running():
             raise BadRequestError("Process already exited")
 
+        try:
+            pgid = os.getpgid(self._process.pid)
+        except Exception:
+            pgid = None
+        try:
+            proc = psutil.Process(self._process.pid)
+            children = proc.children(recursive=True)
+            child_pids = [child.pid for child in children]
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+            proc = None
+            children = []
+            child_pids = []
+
         if signal_type == "SIGTERM":
-            self._process.terminate()
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGTERM)
+            else:
+                self._process.terminate()
         elif signal_type == "SIGKILL":
-            self._process.kill()
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                self._process.kill()
         else:
             raise BadRequestError(f"Invalid signal type: {signal_type}")
 
@@ -75,10 +98,32 @@ class ProcessManager:
             exit_code = self._process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             if signal_type == "SIGTERM":
-                self._process.kill()
+                if pgid is not None:
+                    os.killpg(pgid, signal.SIGKILL)
+                else:
+                    self._process.kill()
                 exit_code = self._process.wait()
             else:
                 exit_code = self._process.wait()
+
+        alive_children = []
+        if proc is not None:
+            try:
+                alive_children = [child for child in proc.children(recursive=True) if child.is_running()]
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+                alive_children = []
+        if alive_children:
+            for child in alive_children:
+                try:
+                    child.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+                    continue
+            psutil.wait_procs(alive_children, timeout=3)
+
+        still_running = self._process.poll() is None
+        if still_running or alive_children:
+            self._status_override = None
+            raise InternalError("Failed to terminate process group")
 
         self._exit_code = exit_code
         self._stopped_at = datetime.now(timezone.utc)
