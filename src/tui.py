@@ -12,6 +12,7 @@ import urllib.request
 from collections import deque
 from datetime import datetime, timezone
 from typing import Deque, Optional
+import signal
 
 
 def _read_lines(stream, buffer: Deque[str], stop_event: threading.Event) -> None:
@@ -281,6 +282,11 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
     io_history: Deque[float] = deque(maxlen=400)
     last_io_total: Optional[int] = None
     last_io_time: Optional[float] = None
+
+    def _handle_sigint(signum, frame) -> None:
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
 
     api_process: Optional[subprocess.Popen] = None
     if not attach:
