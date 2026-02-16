@@ -174,6 +174,7 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                     debug_logger.debug(f"Error getting connections: {type(e).__name__}: {e}")
                     all_connections = []
                 
+                # Collect ports from main process
                 ports = sorted(
                     {
                         conn.laddr.port
@@ -181,7 +182,32 @@ async def start_process(request: StartRequest, format: str = Query("text")):
                         if conn.laddr
                     }
                 )
-                debug_logger.debug(f"Filtered listening ports: {ports}")
+                debug_logger.debug(f"Main process ports: {ports}")
+                
+                # Also collect ports from child processes
+                try:
+                    children = proc.children(recursive=True) if proc.is_running() else []
+                    debug_logger.debug(f"Found {len(children)} child processes")
+                    for child in children:
+                        try:
+                            child_connections = child.connections(kind="all")
+                            debug_logger.debug(f"Child PID {child.pid}: {len(child_connections)} connections")
+                            child_ports = [
+                                conn.laddr.port
+                                for conn in child_connections
+                                if conn.laddr
+                            ]
+                            ports.extend(child_ports)
+                            debug_logger.debug(f"Child PID {child.pid} ports: {child_ports}")
+                        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                            debug_logger.debug(f"Could not get connections for child {child.pid}: {e}")
+                            continue
+                    ports = sorted(set(ports))  # Remove duplicates and sort
+                except (AttributeError, psutil.Error) as e:
+                    debug_logger.debug(f"Error collecting child processes: {e}")
+                    children = []
+                    
+                debug_logger.debug(f"Filtered listening ports (main + children): {ports}")
                 
                 try:
                     io_counters = proc.io_counters() if proc.is_running() else None
@@ -274,6 +300,7 @@ async def get_status(format: str = Query("text")):
                     debug_logger.debug(f"[get_status] Error getting connections: {type(e).__name__}: {e}")
                     all_connections = []
                 
+                # Collect ports from main process
                 ports = sorted(
                     {
                         conn.laddr.port
@@ -281,7 +308,32 @@ async def get_status(format: str = Query("text")):
                         if conn.laddr
                     }
                 )
-                debug_logger.debug(f"[get_status] Filtered listening ports: {ports}")
+                debug_logger.debug(f"[get_status] Main process ports: {ports}")
+                
+                # Also collect ports from child processes
+                try:
+                    children = proc.children(recursive=True) if proc.is_running() else []
+                    debug_logger.debug(f"[get_status] Found {len(children)} child processes")
+                    for child in children:
+                        try:
+                            child_connections = child.connections(kind="all")
+                            debug_logger.debug(f"[get_status] Child PID {child.pid}: {len(child_connections)} connections")
+                            child_ports = [
+                                conn.laddr.port
+                                for conn in child_connections
+                                if conn.laddr
+                            ]
+                            ports.extend(child_ports)
+                            debug_logger.debug(f"[get_status] Child PID {child.pid} ports: {child_ports}")
+                        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                            debug_logger.debug(f"[get_status] Could not get connections for child {child.pid}: {e}")
+                            continue
+                    ports = sorted(set(ports))  # Remove duplicates and sort
+                except (AttributeError, psutil.Error) as e:
+                    debug_logger.debug(f"[get_status] Error collecting child processes: {e}")
+                    children = []
+                    
+                debug_logger.debug(f"[get_status] Filtered listening ports (main + children): {ports}")
                 
                 try:
                     io_counters = proc.io_counters() if proc.is_running() else None
