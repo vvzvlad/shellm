@@ -18,24 +18,32 @@ Provide a repeatable workflow for controlling the LLM Shell API: start a process
 
 ## Output formats
 
-- `/start`, `/status`, `/kill`, `/restart` return **plain text** by default.
-- Add `?format=json` to get JSON for machine parsing.
+- `/start`, `/status`, `/kill`, `/restart` return **plain text** by default, add `?format=json` to get JSON for machine parsing.
 - `/logs` always returns **plain text**.
+- `/start` accepts either JSON (`{"command": "..."}`) or a raw plain-text body with the command string. It is preferable to use plain text body
 
 ## Testing methodology (required)
 
 - Use the `execute_command` tool with `curl` for all testing or interaction with llm_shell API endpoints.
 - Do **not** use a browser to test API endpoints.
 
+## Repeating check
+If you need to periodically check a process, do not execute `curl -s ‘http://localhost:8776/logs’` repeatedly, as too frequent and rapid requests of the same command will cause the agent to freeze.
+
+Instead, use `sleep 20 && curl -s ‘http://localhost:8776/logs’`, setting the desired time instead of 20 if you think it should be different. But as a rule, 20 seconds is a good time for almost any application.
+
+
 ## Project command preface (required)
 
-- ALWAYS change to the project directory before running the server or executing any commands for this project: `cd /Users/vvzvlad/projects/server_hd`.
-- ALWAYS activate the virtual environment before running the server or executing any commands for this project: `source venv/bin/activate`.
-- Example command format (must include both steps):
+- ALWAYS change to the project directory before running the server or executing any commands for this project: `cd /Users/vvzvlad/projects/example_dir`.
+- If the project is in Python, ALWAYS activate the virtual environment before running the server or executing any commands for this project: `source venv/bin/activate`.
+- Example command format:
 
 ```bash
-cd /Users/vvzvlad/projects/server_hd && source .venv/bin/activate && python -m uvicorn src.main:app
+cd /Users/vvzvlad/projects/example_dir && source .venv/bin/activate && python -m example_app.py
 ```
+Instead of /Users/vvzvlad/projects/server_hd, you should substitute the directory where you want to run your project.
+
 
 Example `curl` commands (use via `execute_command`):
 
@@ -71,7 +79,7 @@ Expect `{"status":"healthy"}`.
 
 ### 2) Start a process
 
-Plain text:
+- JSON body:
 
 ```bash
 curl -s -X POST http://localhost:8776/start \
@@ -79,10 +87,18 @@ curl -s -X POST http://localhost:8776/start \
   -d '{"command":"python -m http.server 8080"}'
 ```
 
+- Plain-text body (no JSON):
+
+```bash
+curl -s -X POST http://localhost:8776/start \
+  -H "Content-Type: text/plain" \
+  -d 'python -m http.server 8080'
+```
+
 Note (EN): after POST /start (run_command), the API waits ~2 seconds before responding to collect PID/status and catch early errors (e.g., invalid folder paths).
 Look closely at the API response to see if the command actually ran.
 
-JSON:
+JSON response:
 
 ```bash
 curl -s -X POST 'http://localhost:8776/start?format=json' \

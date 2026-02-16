@@ -101,16 +101,50 @@ curl -s 'http://localhost:8776/logs?lines=40'
 In the case of MK, he can say “reboot” and “output logs”: `platformio run --target upload --target monitor`,
 
 ```bash
-curl -s -X POST http://localhost:8776/start -d ‘{“command”:“platformio run --target upload --target monitor”}’
+curl -s -X POST http://localhost:8776/start -d 'cd data/Projects/ukuetis_controller_fw && pio run -t upload -t monitor'
+
+
+status: running
+pid: 65889
+uptime: 2s
+command: cd data/Projects/ukuetis_controller_fw && pio run -t upload -t monitor
+user: vvzvlad
+ports: 62272
+cpu: 0.0
+mem_mb: 1.953125
+threads: 1
+open_files: 0
+children: 22
 ```
 
 and then
 
 ```bash
-curl -s ‘http://localhost:8776/logs?lines=100’
+sleep 20 && curl -s 'http://localhost:8776/logs?lines=200'
+
+PLATFORM: Espressif 32 (6.12.0) > Espressif ESP32-C3-DevKitM-1
+HARDWARE: ESP32C3 160MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-builtin, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.40900.250804 (4.9.0) 
+ - tool-mkfatfs @ 2.0.1 
+....
+12:13:57.996 > [  2321][I][safety_controller.cpp:532] safety_controller_set_safety_settings_configured(): Safety settings configured flag set to false
+12:13:57.997 > [  2322][I][safety_controller.cpp:794] init_safety_controller(): Safety controller task started
+12:13:58.041 > [  2365][I][wifi_manager.cpp:21] wifi_event(): STA Started
+12:13:58.043 > [  2367][I][wifi_manager.cpp:44] wifi_event(): STA Stopped
+12:13:58.245 > [  2570][I][main.cpp:150] connect_known_wifi(): Scanning for WiFi networks...
+12:13:58.257 > [  2582][I][wifi_manager.cpp:21] wifi_event(): STA Started
+12:14:04.868 > [  9192][I][main.cpp:173] connect_known_wifi(): Known WiFi SSID not found in scan: Asa
+12:14:04.873 > [  9193][I][main.cpp:176] connect_known_wifi(): Found known WiFi SSID in scan: IoT
+12:14:04.874 > [  9194][I][wifi_manager.cpp:67] wifi_connect(): Connecting to WiFi SSID: IoT
+12:14:05.007 > [  9332][I][wifi_manager.cpp:22] wifi_event(): STA Connected
+12:14:05.084 > [  9406][I][wifi_manager.cpp:26] wifi_event(): STA Got IP: 10.31.41.158
+12:14:05.084 > [  9407][I][mqtt_client.cpp:979] mqtt_task(): MQTT task started
 ```
 
-As a result, the agent can debug software for MK completely independently — wrote a piece, assembled it, launched the firmware and monitor through this server, looked at the logs, killed the monitor, corrected the code, launched the assembly and firmware again, and looked at the logs again.
+As a result, the agent can debug software for MCU completely independently — wrote a piece, assembled it, launched the firmware and monitor through this server, looked at the logs, killed the monitor, corrected the code, launched the assembly and firmware again, and looked at the logs again.
 
 
 
