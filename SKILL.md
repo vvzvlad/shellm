@@ -153,7 +153,6 @@ curl -s -X POST http://localhost:8776/start \
   -H "Content-Type: application/json" \
   -d '{"command":"while true; do echo loop-$(date +%H:%M:%S); sleep 1; done"}'
 ```
-
 Then:
 
 ```bash

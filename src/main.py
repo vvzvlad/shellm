@@ -337,7 +337,7 @@ async def get_status(format: str = Query("text")):
     except NotFoundError:
         payload = {
             "command": "",
-            "status": "exited",
+            "status": "not_started",
             "created_at": datetime.now(timezone.utc),
             "process_pid": None,
             "log_file": "",

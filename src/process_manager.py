@@ -121,6 +121,8 @@ class ProcessManager:
     def _get_status_dict(self) -> dict:
         if self._status_override == "killed":
             status = "killed"
+        elif self._process is None and self._command is None:
+            status = "not_started"
         else:
             status = "running" if self.is_running() else "exited"
 

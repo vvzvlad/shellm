@@ -12,7 +12,7 @@ class StartRequest(BaseModel):
 
 class ProcessStatus(BaseModel):
     command: str
-    status: Literal["running", "exited", "killed"]
+    status: Literal["running", "exited", "killed", "not_started"]
     created_at: datetime
     process_pid: Optional[int]
     log_file: str
