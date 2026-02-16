@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import deque
+from datetime import datetime, timezone
 from typing import Deque, Optional
 
 
@@ -32,16 +33,80 @@ def _get_json(url: str, headers: Optional[dict] = None) -> Optional[dict]:
         return None
 
 
-def _draw_pane(stdscr, y: int, height: int, width: int, title: str, lines: Deque[str]) -> None:
-    stdscr.addstr(y, 0, title.ljust(width - 1)[: width - 1], curses.A_REVERSE)
+def _post_json(url: str, headers: Optional[dict] = None) -> Optional[dict]:
+    try:
+        request = urllib.request.Request(url, method="POST", headers=headers or {})
+        with urllib.request.urlopen(request, timeout=2) as response:
+            payload = response.read().decode("utf-8")
+            return json.loads(payload)
+    except (urllib.error.URLError, json.JSONDecodeError):
+        return None
+
+
+def _parse_time(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_uptime(created_at: Optional[str]) -> str:
+    parsed = _parse_time(created_at)
+    if not parsed:
+        return "-"
+    delta = datetime.now(timezone.utc) - parsed
+    seconds = int(delta.total_seconds())
+    if seconds < 0:
+        return "-"
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{sec:02d}s"
+    if minutes:
+        return f"{minutes}m{sec:02d}s"
+    return f"{sec}s"
+
+
+def _draw_pane(
+    stdscr,
+    y: int,
+    x: int,
+    height: int,
+    width: int,
+    title: str,
+    lines: Deque[str],
+) -> None:
+    stdscr.addstr(y, x, title.ljust(width - 1)[: width - 1], curses.A_REVERSE)
     max_lines = height - 1
     visible = list(lines)[-max_lines:]
     for idx in range(max_lines):
         line = visible[idx] if idx < len(visible) else ""
-        stdscr.addstr(y + 1 + idx, 0, line.ljust(width - 1)[: width - 1])
+        stdscr.addstr(y + 1 + idx, x, line.ljust(width - 1)[: width - 1])
 
 
-def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], stop_event: threading.Event) -> None:
+def _wrap_text(text: str, max_width: int) -> list[str]:
+    if max_width <= 1:
+        return [text]
+    words = text.split(" ")
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: dict, status_lock: threading.Lock, stop_event: threading.Event, kill_term, kill_kill) -> None:
     curses.curs_set(0)
     stdscr.nodelay(True)
 
@@ -49,15 +114,43 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], stop_event: t
         stdscr.erase()
         height, width = stdscr.getmaxyx()
         split = height // 2
+        side_width = max(28, width // 3)
+        right_width = max(20, width - side_width)
+        right_x = side_width
 
-        _draw_pane(stdscr, 0, split, width, " API SERVER LOGS (q to quit) ", api_lines)
-        _draw_pane(stdscr, split, height - split, width, " APP LOGS ", app_lines)
+        with status_lock:
+            status = status_info.copy()
+
+        current_status = status.get("status", "-")
+        show_runtime = current_status == "running"
+
+        status_lines = deque(maxlen=80)
+        status_lines.append(f"STATUS: {current_status}")
+        status_lines.append(f"PID: {status.get('pid', '-') if show_runtime else '-'}")
+        status_lines.append(f"UPTIME: {status.get('uptime', '-') if show_runtime else '-'}")
+        status_lines.append("")
+        status_lines.append("COMMAND:")
+        command = status.get("command", "-") or "-"
+        for line in _wrap_text(command, side_width - 2):
+            status_lines.append(line)
+        status_lines.append("")
+        status_lines.append("HOTKEYS:")
+        status_lines.append("k  -> SIGTERM")
+        status_lines.append("K/9-> SIGKILL")
+
+        _draw_pane(stdscr, 0, 0, height, side_width, " STATUS ", status_lines)
+        _draw_pane(stdscr, 0, right_x, split, right_width, " API SERVER LOGS (q to quit) ", api_lines)
+        _draw_pane(stdscr, split, right_x, height - split, right_width, " APP LOGS ", app_lines)
 
         stdscr.refresh()
         ch = stdscr.getch()
         if ch in (ord("q"), ord("Q")):
             stop_event.set()
             break
+        if ch == ord("k"):
+            kill_term()
+        if ch in (ord("K"), ord("9")):
+            kill_kill()
         time.sleep(0.1)
 
 
@@ -83,6 +176,8 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
     api_lines: Deque[str] = deque(maxlen=500)
     app_lines: Deque[str] = deque(maxlen=500)
     stop_event = threading.Event()
+    status_lock = threading.Lock()
+    status_info = {"status": "-", "pid": "-", "command": "-", "uptime": "-"}
 
     api_process: Optional[subprocess.Popen] = None
     if not attach:
@@ -115,6 +210,13 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
         headers = {"x-llm-shell-tui": "1"}
         while not stop_event.is_set():
             status = _get_json(f"{base_url}/status", headers=headers)
+            if status:
+                with status_lock:
+                    status_info["status"] = status.get("status") or "-"
+                    status_info["pid"] = status.get("process_pid") or "-"
+                    status_info["command"] = status.get("command") or "-"
+                    status_info["uptime"] = _format_uptime(status.get("created_at"))
+
             if status and status.get("log_file"):
                 logs = _get_json(f"{base_url}/logs?lines={lines}", headers=headers)
                 if logs and logs.get("content"):
@@ -128,10 +230,20 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
                 app_lines.append("[process not started]")
             time.sleep(poll)
 
+    def kill_term() -> None:
+        base_url = f"http://{host}:{port}"
+        headers = {"x-llm-shell-tui": "1"}
+        _post_json(f"{base_url}/kill?type=SIGTERM", headers=headers)
+
+    def kill_kill() -> None:
+        base_url = f"http://{host}:{port}"
+        headers = {"x-llm-shell-tui": "1"}
+        _post_json(f"{base_url}/kill?type=SIGKILL", headers=headers)
+
     threading.Thread(target=poll_app_logs, daemon=True).start()
 
     try:
-        curses.wrapper(_run_tui, api_lines, app_lines, stop_event)
+        curses.wrapper(_run_tui, api_lines, app_lines, status_info, status_lock, stop_event, kill_term, kill_kill)
     finally:
         stop_event.set()
         if api_process and api_process.poll() is None:
