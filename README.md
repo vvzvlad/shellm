@@ -63,20 +63,16 @@ sequenceDiagram
 ## Case: HTTP-server
 
 ```bash
-curl -s -X POST http://localhost:8776/start -d 'cd ~/Data/Projects/ukuetis_logger_backend_v2 && source .venv/bin/activate && python main.py'
+curl -s -X POST http://localhost:8776/start -d 'cd ~/Projects/backend && python main.py'
 status: running
 pid: 43675
 uptime: 2s
 command: cd ~/Data/Projects/ukuetis_logger_backend_v2 && source .venv/bin/activate && python main.py
 user: vvzvlad
-ports: -
-cpu: 0.0
+ports: 8080
+cpu: 1.2
 mem_mb: 1.796875
-threads: 1
-open_files: 0
-connections: 0
-children: 1
-env_count: 0
+
 ```
 
 ```bash
@@ -103,8 +99,7 @@ curl -s 'http://localhost:8776/logs?lines=40'
 In the case of MK, he can say “reboot” and “output logs”: `platformio run --target upload --target monitor`,
 
 ```bash
-curl -s -X POST http://localhost:8776/start -d 'cd data/Projects/ukuetis_controller_fw && pio run -t upload -t monitor'
-
+curl -s -X POST http://localhost:8776/start -d 'pio run -t upload -t monitor'
 
 status: running
 pid: 65889
@@ -112,11 +107,9 @@ uptime: 2s
 command: cd data/Projects/ukuetis_controller_fw && pio run -t upload -t monitor
 user: vvzvlad
 ports: 62272
-cpu: 0.0
+cpu: 52.0
 mem_mb: 1.953125
-threads: 1
-open_files: 0
-children: 22
+childrens: 22
 ```
 
 and then
