@@ -27,6 +27,16 @@ Provide a repeatable workflow for controlling the LLM Shell API: start a process
 - Use the `execute_command` tool with `curl` for all testing or interaction with llm_shell API endpoints.
 - Do **not** use a browser to test API endpoints.
 
+## Project command preface (required)
+
+- ALWAYS change to the project directory before running the server or executing any commands for this project: `cd /Users/vvzvlad/Data/Projects/llm_shell`.
+- ALWAYS activate the virtual environment before running the server or executing any commands for this project: `source venv/bin/activate`.
+- Example command format (must include both steps):
+
+```bash
+cd /Users/vvzvlad/Data/Projects/llm_shell && source venv/bin/activate && python -m uvicorn src.main:app
+```
+
 Example `curl` commands (use via `execute_command`):
 
 ```bash
