@@ -100,6 +100,24 @@ def _collect_ports(proc: psutil.Process) -> tuple[list[int], int]:
     return ports, child_count
 
 
+def _collect_usage(proc: psutil.Process, children: list[psutil.Process]) -> tuple[Optional[float], Optional[int]]:
+    cpu_total = 0.0
+    mem_total = 0
+    collected = False
+    for target in [proc, *children]:
+        try:
+            if not target.is_running():
+                continue
+            cpu_total += target.cpu_percent(interval=0.0)
+            mem_total += target.memory_info().rss
+            collected = True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+            continue
+    if not collected:
+        return None, None
+    return cpu_total, mem_total
+
+
 def _status_text(payload: dict) -> str:
     lines = []
     lines.append(f"status: {payload.get('status', '-')}")
@@ -199,8 +217,6 @@ async def start_process(request: Request, format: str = Query("text")):
         if status.get("process_pid") and status.get("status") == "running":
             try:
                 proc = psutil.Process(status["process_pid"])
-                cpu = proc.cpu_percent(interval=0.0)
-                mem = proc.memory_info().rss
                 user = proc.username()
                 ports, _ = _collect_ports(proc)
                 try:
@@ -219,11 +235,12 @@ async def start_process(request: Request, format: str = Query("text")):
                     env = proc.environ() if proc.is_running() else {}
                 except (AttributeError, psutil.Error):
                     env = {}
+                cpu_total, mem_total = _collect_usage(proc, children)
                 uptime_seconds = int(max(0.0, time.time() - proc.create_time()))
                 status.update(
                     {
-                        "cpu_percent": cpu,
-                        "memory_mb": mem / (1024 * 1024),
+                        "cpu_percent": cpu_total,
+                        "memory_mb": mem_total / (1024 * 1024) if mem_total is not None else None,
                         "user": user,
                         "ports": ports,
                         "threads": proc.num_threads(),
@@ -268,8 +285,6 @@ async def get_status(format: str = Query("text")):
         if status.get("process_pid") and status.get("status") == "running":
             try:
                 proc = psutil.Process(status["process_pid"])
-                cpu = proc.cpu_percent(interval=0.0)
-                mem = proc.memory_info().rss
                 user = proc.username()
                 ports, _ = _collect_ports(proc)
                 try:
@@ -288,11 +303,12 @@ async def get_status(format: str = Query("text")):
                     env = proc.environ() if proc.is_running() else {}
                 except (AttributeError, psutil.Error):
                     env = {}
+                cpu_total, mem_total = _collect_usage(proc, children)
                 uptime_seconds = int(max(0.0, time.time() - proc.create_time()))
                 status.update(
                     {
-                        "cpu_percent": cpu,
-                        "memory_mb": mem / (1024 * 1024),
+                        "cpu_percent": cpu_total,
+                        "memory_mb": mem_total / (1024 * 1024) if mem_total is not None else None,
                         "user": user,
                         "ports": ports,
                         "threads": proc.num_threads(),
