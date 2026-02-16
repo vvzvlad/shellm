@@ -1,17 +1,21 @@
 # Shellm: Terminal server for LLM agents
 
-This is a simple thing, not an MCP server. The only thing it does is allow you to use the HTTP API to control a console in which some console-blocking process is running. 
-If you write an application that runs and works by blocking the console — for example, a Telegram bot or something with HTTP — then a problem arises: the agent can run commands itself during development, write, run, check for errors, fix them, and run again. But if it needs to catch a piece of log that appears in a running process, things get more complicated: after running the command, it only receives the next call when the command is complete, and if it doesn't hang because the server is hanging on the process and processing data, the agent just waits.
+This is a simple thing, not an MCP server. The only thing it does is allow you to use the HTTP API to control a console in which some console-blocking process is running.  
+
+If you write an application that runs and works by blocking the console — for example, a Telegram bot or something with HTTP — then a problem arises: the agent can run commands itself during development, write, run, check for errors, fix them, and run again.  
+
+But if it needs to catch a piece of log that appears in a running process, things get more complicated: after running the command, it only receives the next call when the command is complete, and if it doesn't hang because the server is hanging on the process and processing data, the agent just waits.
 
 ![Shellm overview](img/2.jpeg)
- 
+
 Therefore, to debug such servers, you have to run them in a separate terminal and copy pieces of logs from there to the agent's chat.
-Or, another example: MCU development. Some things can only be debugged in hardware, and communication with MCU occurs via UART. To view the logs from the MCU, you need to run some kind of serial monitor, but again, it will block the console and constantly write what the MCU sends to it, and to show this to the agent, you need to copy a piece of text from there and paste it into the agent's chat. It's inconvenient, manual work that has no value.
+
+Or, another example: MCU development.  
+Some things can only be debugged in hardware, and communication with MCU occurs via UART. To view the logs from the MCU, you need to run some kind of serial monitor, but again, it will block the console and constantly write what the MCU sends to it, and to show this to the agent, you need to copy a piece of text from there and paste it into the agent's chat. It's inconvenient, manual work that has no value.
 
 Shellm is a simple application that you run (manually) in the console, and then the agent communicates with it. It can tell it to "run this command," and then say "show me the last 20 lines of logs," find what it needs in those logs, fix the code, and then ask Shellm to restart the process.
- 
 
-## How works
+## How it works
 
 ```mermaid
 sequenceDiagram
@@ -158,7 +162,7 @@ Check:
 curl http://localhost:8776/health
 ```
 
-Copy SKILL.md to the skills directory for your agent, restart vscode. 
+Copy SKILL.md to the skills directory for your agent, restart vscode.  
 Assign a task to the agent and add something like “use the llm-shell-operator skill for interaction” at the end, or simply show them this readme.
 
 
