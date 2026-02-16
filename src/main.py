@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import uvicorn
@@ -15,11 +15,23 @@ from .log_manager import LogManager
 from .models import HealthResponse, KillResponse, LogsResponse, ProcessStatus, StartRequest
 from .process_manager import ProcessManager
 
-app = FastAPI(title="LLM Shell", version="1.0.0")
-
 process_manager = ProcessManager()
 log_manager = LogManager(settings.log_dir)
-start_time = datetime.utcnow()
+start_time = datetime.now(timezone.utc)
+
+
+async def lifespan(app: FastAPI):
+    yield
+    try:
+        current_process = process_manager.get_process()
+        if current_process and current_process.poll() is None:
+            process_manager.kill("SIGTERM")
+    except Exception:
+        pass
+    log_manager.stop_logging()
+
+
+app = FastAPI(title="LLM Shell", version="1.0.0", lifespan=lifespan)
 
 
 @app.exception_handler(HTTPException)
@@ -34,7 +46,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> dict:
-    uptime = int((datetime.utcnow() - start_time).total_seconds())
+    uptime = int((datetime.now(timezone.utc) - start_time).total_seconds())
     return {"status": "healthy", "version": "1.0.0", "uptime": uptime}
 
 
@@ -100,17 +112,6 @@ async def get_logs(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BadRequestError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    try:
-        current_process = process_manager.get_process()
-        if current_process and current_process.poll() is None:
-            process_manager.kill("SIGTERM")
-    except Exception:
-        pass
-    log_manager.stop_logging()
 
 
 def main() -> None:

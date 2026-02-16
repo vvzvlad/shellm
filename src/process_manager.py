@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .exceptions import BadRequestError, ConflictError, InternalError, NotFoundError
@@ -23,7 +23,7 @@ class ProcessManager:
             raise ConflictError("Process already running")
 
         self._command = command
-        self._created_at = datetime.utcnow()
+        self._created_at = datetime.now(timezone.utc)
         self._log_file = log_file
         self._stopped_at = None
         self._exit_code = None
@@ -36,7 +36,7 @@ class ProcessManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 bufsize=1,
-                universal_newlines=False,
+                text=True,
             )
         except Exception as exc:
             raise InternalError(f"Failed to start process: {exc}") from exc
@@ -81,7 +81,7 @@ class ProcessManager:
                 exit_code = self._process.wait()
 
         self._exit_code = exit_code
-        self._stopped_at = datetime.utcnow()
+        self._stopped_at = datetime.now(timezone.utc)
         self._status_override = "killed"
 
         return {
@@ -116,7 +116,7 @@ class ProcessManager:
         exit_code = self._process.poll()
         if exit_code is not None and self._exit_code is None:
             self._exit_code = exit_code
-            self._stopped_at = datetime.utcnow()
+            self._stopped_at = datetime.now(timezone.utc)
 
     def _get_status_dict(self) -> dict:
         if self._status_override == "killed":
@@ -127,7 +127,7 @@ class ProcessManager:
         return {
             "command": self._command or "",
             "status": status,
-            "created_at": self._created_at or datetime.utcnow(),
+            "created_at": self._created_at or datetime.now(timezone.utc),
             "process_pid": self._process.pid if self._process else None,
             "log_file": self._log_file or "",
             "stopped_at": self._stopped_at,

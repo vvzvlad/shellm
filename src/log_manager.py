@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +19,7 @@ class LogManager:
         self._write_lock = threading.Lock()
 
     def create_log_file(self) -> str:
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S-%f")
         filename = f"{timestamp}.log"
         filepath = self.log_dir / filename
         filepath.touch(exist_ok=False)
@@ -66,11 +66,11 @@ class LogManager:
         total_lines = len(entries)
 
         if seconds is not None:
-            cutoff = datetime.utcnow() - timedelta(seconds=seconds)
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=seconds)
             filtered = [
                 entry
                 for entry in entries
-                if datetime.fromisoformat(entry["timestamp"].rstrip("Z")) >= cutoff
+                if self._parse_timestamp(entry["timestamp"]) >= cutoff
             ]
         elif lines is not None:
             filtered = entries[-lines:] if lines > 0 else entries
@@ -86,6 +86,14 @@ class LogManager:
             "content": content,
         }
 
+    @staticmethod
+    def _parse_timestamp(raw: str) -> datetime:
+        normalized = raw.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
     def _log_writer(self, process, log_file: str) -> None:
         try:
             with open(log_file, "a", encoding="utf-8") as handle:
@@ -97,8 +105,8 @@ class LogManager:
                         continue
 
                     log_entry = {
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                        "line": line.decode("utf-8", errors="replace").rstrip("\n\r"),
+                        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "line": line.rstrip("\n\r"),
                     }
                     with self._write_lock:
                         handle.write(json.dumps(log_entry, ensure_ascii=False) + "\n")

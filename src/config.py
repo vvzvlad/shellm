@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -9,9 +9,7 @@ class Settings(BaseSettings):
     log_dir: str = "logs"
     default_restart_timeout: int = 10
 
-    class Config:
-        env_prefix = "LLM_SHELL_"
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_prefix="LLM_SHELL_", env_file=".env")
 
 
 settings = Settings()
