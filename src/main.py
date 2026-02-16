@@ -32,11 +32,10 @@ if not access_logger.handlers:
     access_logger.setLevel(logging.INFO)
     access_logger.propagate = False
 
-# Add debug logger for port collection diagnostics
 debug_logger = logging.getLogger("llm_shell.debug")
 if not debug_logger.handlers:
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("DEBUG [ports]: %(message)s"))
+    handler.setFormatter(logging.Formatter("DEBUG: %(message)s"))
     debug_logger.addHandler(handler)
     debug_logger.setLevel(logging.DEBUG)
     debug_logger.propagate = False
@@ -164,8 +163,15 @@ async def start_process(request: StartRequest, format: str = Query("text")):
         log_file = log_manager.create_log_file()
         status = process_manager.start(request.command, log_file)
         log_manager.start_logging(process_manager.get_process(), log_file)
-        await asyncio.sleep(2)
-        status = process_manager.get_status()
+        wait_until = time.monotonic() + 2.0
+        while True:
+            status = process_manager.get_status()
+            if status.get("status") == "exited":
+                break
+            remaining = wait_until - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(0.05, remaining))
         if status.get("status") == "exited":
             log_manager.stop_logging()  # Ensure log writer completes
             await asyncio.sleep(0.5)  # Give thread time to flush
