@@ -24,6 +24,7 @@ from .tui import run_tui
 process_manager = ProcessManager()
 log_manager = LogManager(settings.log_dir)
 start_time = datetime.now(timezone.utc)
+_cpu_samples: dict[int, tuple[float, float]] = {}
 access_logger = logging.getLogger("llm_shell.access")
 if not access_logger.handlers:
     handler = logging.StreamHandler(sys.stdout)
@@ -101,21 +102,31 @@ def _collect_ports(proc: psutil.Process) -> tuple[list[int], int]:
 
 
 def _collect_usage(proc: psutil.Process, children: list[psutil.Process]) -> tuple[Optional[float], Optional[int]]:
-    cpu_total = 0.0
+    cpu_time_total = 0.0
     mem_total = 0
     collected = False
     for target in [proc, *children]:
         try:
             if not target.is_running():
                 continue
-            cpu_total += target.cpu_percent(interval=0.0)
             mem_total += target.memory_info().rss
+            times = target.cpu_times()
+            cpu_time_total += float(times.user + times.system)
             collected = True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
             continue
     if not collected:
         return None, None
-    return cpu_total, mem_total
+    now = time.time()
+    last = _cpu_samples.get(proc.pid)
+    _cpu_samples[proc.pid] = (now, cpu_time_total)
+    if not last:
+        return None, mem_total
+    last_time, last_cpu = last
+    delta_time = max(0.001, now - last_time)
+    delta_cpu = max(0.0, cpu_time_total - last_cpu)
+    cpu_percent = (delta_cpu / delta_time) * 100.0
+    return cpu_percent, mem_total
 
 
 def _status_text(payload: dict) -> str:
