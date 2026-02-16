@@ -107,6 +107,19 @@ def _wrap_text(text: str, max_width: int) -> list[str]:
     return lines
 
 
+def _sparkline(values: list[float], max_points: int) -> str:
+    if not values:
+        return "-"
+    levels = "▁▂▃▄▅▆▇█"
+    trimmed = values[-max_points:]
+    scaled = []
+    for value in trimmed:
+        clamped = max(0.0, min(100.0, value))
+        idx = int(round((clamped / 100.0) * (len(levels) - 1)))
+        scaled.append(levels[idx])
+    return "".join(scaled)
+
+
 def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: dict, status_lock: threading.Lock, stop_event: threading.Event, kill_term, kill_kill) -> None:
     curses.curs_set(0)
     stdscr.nodelay(True)
@@ -125,8 +138,9 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
         current_status = status.get("status", "-")
         show_runtime = current_status == "running"
 
-        status_lines = deque(maxlen=80)
+        status_lines = deque(maxlen=100)
         label_width = 8
+        spark_width = max(1, side_width - 2)
         def row(label: str, value: str) -> str:
             return f"{label.ljust(label_width)}{value}"
 
@@ -138,6 +152,13 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
         status_lines.append(row("USER", str(status.get('user', '-') if show_runtime else '-')))
         ports = status.get("ports") if show_runtime else None
         status_lines.append(row("PORTS", str(ports if ports else '-')))
+        status_lines.append("")
+        cpu_value = str(status.get('cpu', '-') if show_runtime else '-')
+        mem_value = str(status.get('mem', '-') if show_runtime else '-')
+        status_lines.append(row("CPU", cpu_value))
+        status_lines.append(_sparkline(status.get("cpu_history", []), spark_width))
+        status_lines.append(row("MEM", mem_value))
+        status_lines.append(_sparkline(status.get("mem_history", []), spark_width))
         status_lines.append("")
         status_lines.append("COMMAND:")
         command = status.get("command", "-") or "-"
@@ -194,6 +215,8 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
         "ports": "-",
     }
     last_status: Optional[str] = None
+    cpu_history: Deque[float] = deque(maxlen=200)
+    mem_history: Deque[float] = deque(maxlen=200)
 
     api_process: Optional[subprocess.Popen] = None
     if not attach:
@@ -240,6 +263,12 @@ def run_tui(host: str, port: int, attach: bool, poll: float, lines: int) -> None
                     status_info["user"] = status.get("user") or "-"
                     ports = status.get("ports")
                     status_info["ports"] = ",".join(str(p) for p in ports) if ports else "-"
+                    if isinstance(cpu, (int, float)):
+                        cpu_history.append(float(cpu))
+                    if isinstance(mem, (int, float)):
+                        mem_history.append(float(mem))
+                    status_info["cpu_history"] = list(cpu_history)
+                    status_info["mem_history"] = list(mem_history)
 
                 current_status = status.get("status")
                 if last_status == "running" and current_status in {"exited", "killed"}:
