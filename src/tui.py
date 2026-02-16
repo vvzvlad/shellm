@@ -125,14 +125,18 @@ def _run_tui(stdscr, api_lines: Deque[str], app_lines: Deque[str], status_info: 
         show_runtime = current_status == "running"
 
         status_lines = deque(maxlen=80)
-        status_lines.append(f"STATUS: {current_status}")
-        status_lines.append(f"PID: {status.get('pid', '-') if show_runtime else '-'}")
-        status_lines.append(f"UPTIME: {status.get('uptime', '-') if show_runtime else '-'}")
-        status_lines.append(f"CPU: {status.get('cpu', '-') if show_runtime else '-'}")
-        status_lines.append(f"MEM: {status.get('mem', '-') if show_runtime else '-'}")
-        status_lines.append(f"USER: {status.get('user', '-') if show_runtime else '-'}")
+        label_width = 8
+        def row(label: str, value: str) -> str:
+            return f"{label.ljust(label_width)}{value}"
+
+        status_lines.append(row("STATUS", current_status))
+        status_lines.append(row("PID", str(status.get('pid', '-') if show_runtime else '-')))
+        status_lines.append(row("UPTIME", str(status.get('uptime', '-') if show_runtime else '-')))
+        status_lines.append(row("CPU", str(status.get('cpu', '-') if show_runtime else '-')))
+        status_lines.append(row("MEM", str(status.get('mem', '-') if show_runtime else '-')))
+        status_lines.append(row("USER", str(status.get('user', '-') if show_runtime else '-')))
         ports = status.get("ports") if show_runtime else None
-        status_lines.append(f"PORTS: {ports if ports else '-'}")
+        status_lines.append(row("PORTS", str(ports if ports else '-')))
         status_lines.append("")
         status_lines.append("COMMAND:")
         command = status.get("command", "-") or "-"
